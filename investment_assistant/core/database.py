@@ -7,11 +7,11 @@ connection; all SQL in this codebase uses standard SQL-92 syntax.
 """
 import sqlite3
 from pathlib import Path
-from config import DB_PATH
+from investment_assistant.config import SETTINGS
 
 
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(SETTINGS.db_path)
     conn.row_factory = sqlite3.Row   # rows behave like dicts
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -74,7 +74,7 @@ def init_db() -> None:
             created_at  TEXT    NOT NULL
         );
         """)
-    print(f"[db] Initialised → {DB_PATH}")
+    print(f"[db] Initialised → {SETTINGS.db_path}")
 
 
 if __name__ == "__main__":

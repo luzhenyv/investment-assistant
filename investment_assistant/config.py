@@ -1,46 +1,84 @@
+"""Project configuration loaded from defaults + environment variables.
+
+Values can be provided through a local ``.env`` file at the repository root
+or via process environment variables.
 """
-Central configuration. Edit this file to customise the system.
-All secrets should be set via environment variables in production.
-"""
-import os
+
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
-BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# ── Database ──────────────────────────────────────────────
-DB_PATH = DATA_DIR / "trading.db"
 
-# ── Price feed ────────────────────────────────────────────
-# Swap this class path to switch data sources (e.g. AlphaVantage)
-PRICE_FEED_BACKEND = "core.price_feed.YahooFeed"
-OHLCV_HISTORY_YEARS = 5
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
-# Watchlist: your ~50 stocks
-WATCHLIST = [
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
-    "META", "TSLA", "AMD", "NFLX", "PLTR",
-    # Add the rest of your symbols here
-]
 
-# Macro instruments (Yahoo Finance tickers)
-MACRO_SYMBOLS = {
-    "SPX":   "^GSPC",
-    "VIX":   "^VIX",
-    "DXY":   "DX-Y.NYB",
-    "OIL":   "CL=F",
-    "GOLD":  "GC=F",
-}
+class Settings(BaseSettings):
+    """Typed runtime settings for the investment assistant."""
 
-# ── Alert settings ────────────────────────────────────────
-# Price must be inside zone to trigger alert (on open or close)
-FLIP_THRESHOLD_PCT = 2.0   # % beyond zone edge to suggest a flip
+    model_config = SettingsConfigDict(
+        env_file=ROOT_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-# ── Telegram ─────────────────────────────────────────────
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
+    data_dir: Path = ROOT_DIR / "data"
+    db_path: Path | None = None
 
-# ── Scheduler ─────────────────────────────────────────────
-# Times are ET (Eastern Time). Market closes 16:00 ET.
-DAILY_JOB_TIME_ET = "16:30"   # run 30 min after close
+    price_feed_backend: str = "core.price_feed.YahooFeed"
+    ohlcv_history_years: int = 5
+
+    watchlist: list[str] = [
+        "AAPL",
+        "MSFT",
+        "NVDA",
+        "GOOGL",
+        "AMZN",
+        "META",
+        "TSLA",
+        "AMD",
+        "NFLX",
+        "PLTR",
+    ]
+
+    macro_symbols: dict[str, str] = {
+        "SPX": "^GSPC",
+        "VIX": "^VIX",
+        "DXY": "DX-Y.NYB",
+        "OIL": "CL=F",
+        "GOLD": "GC=F",
+    }
+
+    flip_threshold_pct: float = 2.0
+    telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
+    daily_job_time_et: str = "16:30"
+
+    @field_validator("watchlist", mode="before")
+    @classmethod
+    def _parse_watchlist(cls, value: Any) -> Any:
+        # Support WATCHLIST="AAPL,MSFT,TSLA" in .env in addition to JSON arrays.
+        if isinstance(value, str):
+            return [s.strip() for s in value.split(",") if s.strip()]
+        return value
+
+    @field_validator("db_path", mode="before")
+    @classmethod
+    def _empty_db_path_to_none(cls, value: Any) -> Any:
+        if value in ("", None):
+            return None
+        return value
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    settings = Settings()
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    if settings.db_path is None:
+        settings.db_path = settings.data_dir / "trading.db"
+    return settings
+
+
+SETTINGS = get_settings()

@@ -11,13 +11,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from core.database import init_db
-from core.zone_store import (
+from investment_assistant.core.database import init_db
+from investment_assistant.core.zone_store import (
     add_zone, update_zone, deactivate_zone, flip_zone,
     get_zones, get_zone_by_id, get_all_active_zones,
 )
-from core.price_feed import get_latest_close
-from config import WATCHLIST, MACRO_SYMBOLS
+from investment_assistant.core.price_feed import get_latest_close
+from investment_assistant.config import SETTINGS
 
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 app = FastAPI(title="Investment Assistant Web")
@@ -35,7 +35,7 @@ def index(request: Request):
     """Watchlist overview: each stock + its current price + zone count."""
     all_zones = get_all_active_zones()
     watchlist_data = []
-    for symbol in WATCHLIST:
+    for symbol in SETTINGS.watchlist:
         zones = all_zones.get(symbol, [])
         price = get_latest_close(symbol)
         watchlist_data.append({

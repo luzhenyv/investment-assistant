@@ -8,11 +8,11 @@ Assembles the end-of-day Telegram report:
 """
 from __future__ import annotations
 from datetime import date
-from core.price_feed import get_latest_close, get_latest_open
-from core.zone_store import get_all_active_zones
-from core.alert_engine import run_alert_check, Alert
-from core.database import get_conn
-from config import WATCHLIST, MACRO_SYMBOLS
+from investment_assistant.core.price_feed import get_latest_close, get_latest_open
+from investment_assistant.core.zone_store import get_all_active_zones
+from investment_assistant.core.alert_engine import run_alert_check, Alert
+from investment_assistant.core.database import get_conn
+from investment_assistant.config import SETTINGS
 
 
 def _macro_snapshot() -> str:
@@ -24,7 +24,7 @@ def _macro_snapshot() -> str:
         "OIL":  "原油",
         "GOLD": "黄金",
     }
-    for key, ticker in MACRO_SYMBOLS.items():
+    for key, ticker in SETTINGS.macro_symbols.items():
         price = get_latest_close(ticker)
         label = labels.get(key, key)
         val = f"${price:,.2f}" if price else "N/A"
@@ -51,7 +51,7 @@ def build_digest() -> tuple[str, list[Alert]]:
     all_zones = get_all_active_zones()
     triggered: list[Alert] = []
 
-    for symbol in WATCHLIST:
+    for symbol in SETTINGS.watchlist:
         zones = all_zones.get(symbol, [])
         if not zones:
             continue

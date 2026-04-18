@@ -24,10 +24,10 @@ from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
 
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-from core.price_feed import get_latest_close
-from core.zone_store import get_zones, flip_zone, get_zone_by_id
-from core.digest_builder import build_digest
+from investment_assistant.config import SETTINGS
+from investment_assistant.core.price_feed import get_latest_close
+from investment_assistant.core.zone_store import get_zones, flip_zone, get_zone_by_id
+from investment_assistant.core.digest_builder import build_digest
 
 log = logging.getLogger(__name__)
 
@@ -35,12 +35,12 @@ log = logging.getLogger(__name__)
 # ── Push (fire-and-forget) ─────────────────────────────────────────────────────
 
 async def _send_async(text: str) -> None:
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not SETTINGS.telegram_bot_token or not SETTINGS.telegram_chat_id:
         print("[telegram] No credentials — stdout:\n" + text)
         return
-    async with Bot(token=TELEGRAM_BOT_TOKEN) as bot:
+    async with Bot(token=SETTINGS.telegram_bot_token) as bot:
         await bot.send_message(
-            chat_id=TELEGRAM_CHAT_ID,
+            chat_id=SETTINGS.telegram_chat_id,
             text=text,
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -156,7 +156,7 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # ── Bot runner (polling mode) ──────────────────────────────────────────────────
 
 def run_bot() -> None:
-    if not TELEGRAM_BOT_TOKEN:
+    if not SETTINGS.telegram_bot_token:
         print("[telegram] TELEGRAM_BOT_TOKEN not set. Export it and retry.")
         sys.exit(1)
 
@@ -165,7 +165,7 @@ def run_bot() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app = Application.builder().token(SETTINGS.telegram_bot_token).build()
     app.add_handler(CommandHandler("help",   cmd_help))
     app.add_handler(CommandHandler("price",  cmd_price))
     app.add_handler(CommandHandler("zones",  cmd_zones))

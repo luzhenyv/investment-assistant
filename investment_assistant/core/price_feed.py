@@ -12,8 +12,8 @@ from typing import Optional
 import pandas as pd
 import yfinance as yf
 
-from core.database import get_conn
-from config import OHLCV_HISTORY_YEARS, MACRO_SYMBOLS
+from investment_assistant.core.database import get_conn
+from investment_assistant.config import SETTINGS
 
 
 # ── Abstract interface ────────────────────────────────────────────────────────
@@ -62,8 +62,7 @@ class YahooFeed(PriceFeed):
 
 def get_feed() -> PriceFeed:
     """Instantiate the configured feed backend."""
-    from config import PRICE_FEED_BACKEND
-    module_path, class_name = PRICE_FEED_BACKEND.rsplit(".", 1)
+    module_path, class_name = SETTINGS.price_feed_backend.rsplit(".", 1)
     import importlib
     module = importlib.import_module(module_path)
     return getattr(module, class_name)()
@@ -109,7 +108,7 @@ def sync_symbol(symbol: str, feed: Optional[PriceFeed] = None) -> int:
 
     last = _last_stored_date(symbol)
     if last is None:
-        start = date.today() - timedelta(days=365 * OHLCV_HISTORY_YEARS)
+        start = date.today() - timedelta(days=365 * SETTINGS.ohlcv_history_years)
     else:
         start = last + timedelta(days=1)   # incremental
 
@@ -177,7 +176,7 @@ def get_latest_open(symbol: str) -> Optional[float]:
 
 if __name__ == "__main__":
     # Quick smoke test
-    from config import WATCHLIST
+    from investment_assistant.config import SETTINGS
     from core.database import init_db
     init_db()
     feed = YahooFeed()

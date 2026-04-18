@@ -17,11 +17,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import logging
 from datetime import datetime
 
-from core.database import init_db
-from core.price_feed import sync_all, get_feed
-from core.digest_builder import build_digest
+from investment_assistant.core.database import init_db
+from investment_assistant.core.price_feed import sync_all, get_feed
+from investment_assistant.core.digest_builder import build_digest
 from investment_assistant.notify.telegram_bot import send_digest
-from config import WATCHLIST, MACRO_SYMBOLS
+from investment_assistant.config import SETTINGS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,7 +35,7 @@ def run() -> None:
     init_db()
 
     # 1. Sync prices
-    all_symbols = WATCHLIST + list(MACRO_SYMBOLS.values())
+    all_symbols = SETTINGS.watchlist + list(SETTINGS.macro_symbols.values())
     feed = get_feed()
     log.info("Syncing %d symbols...", len(all_symbols))
     sync_all(all_symbols, feed)

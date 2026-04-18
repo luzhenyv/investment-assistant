@@ -5,11 +5,11 @@ Run once:  python setup.py
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from core.database import init_db
-from core.price_feed import sync_symbol, get_ohlcv, get_latest_close, YahooFeed
-from core.zone_store import add_zone, get_zones
-from core.alert_engine import run_alert_check
-from core.digest_builder import build_digest
+from investment_assistant.core.database import init_db
+from investment_assistant.core.price_feed import sync_symbol, get_ohlcv, get_latest_close, YahooFeed
+from investment_assistant.core.zone_store import add_zone, get_zones
+from investment_assistant.core.alert_engine import run_alert_check
+from investment_assistant.core.digest_builder import build_digest
 
 print("1. Initialising database...")
 init_db()

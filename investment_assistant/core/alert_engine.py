@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
-from config import FLIP_THRESHOLD_PCT
+from investment_assistant.config import SETTINGS
 
 
 TriggerType = Literal["open", "close"]
@@ -52,7 +52,7 @@ def _flip_suggested(price: float, zone: dict) -> bool:
     Beyond low by FLIP_THRESHOLD_PCT  → former support may be new resistance.
     Beyond high by FLIP_THRESHOLD_PCT → former resistance may be new support.
     """
-    pct = FLIP_THRESHOLD_PCT / 100
+    pct = SETTINGS.flip_threshold_pct / 100
     below = price < zone["low"] * (1 - pct)
     above = price > zone["high"] * (1 + pct)
     return below or above

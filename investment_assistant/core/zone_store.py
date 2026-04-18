@@ -5,7 +5,7 @@ All persistence goes through this module — callers never touch DB directly.
 from __future__ import annotations
 from datetime import datetime
 from typing import Optional
-from core.database import get_conn
+from investment_assistant.core.database import get_conn
 
 
 def _now() -> str:
