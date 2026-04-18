@@ -7,6 +7,7 @@ Run:  uvicorn investment_assistant.web.app:app --reload
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -21,15 +22,18 @@ from investment_assistant.core.zones import (
 from investment_assistant.services.prices import get_latest_close
 
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
-app = FastAPI(title="Investment Assistant Web")
 log = get_logger(__name__)
 
 
-@app.on_event("startup")
-def _startup() -> None:
+@asynccontextmanager
+async def lifespan(_: FastAPI):
     setup_logging(SETTINGS.log_dir, SETTINGS.log_level, service="web")
     init_db()
     log.info("Web app startup complete.")
+    yield
+
+
+app = FastAPI(title="Investment Assistant Web", lifespan=lifespan)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
