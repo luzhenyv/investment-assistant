@@ -11,8 +11,8 @@ Default (SQLite):
   DATABASE_URL=sqlite:///./data/trading.db
 """
 from __future__ import annotations
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Optional, Generator
 from contextlib import contextmanager
 
 from sqlalchemy import (
@@ -60,7 +60,7 @@ Base = declarative_base()
 
 
 @contextmanager
-def get_session() -> Session:
+def get_session() -> Generator[Session, None, None]:
     """Context manager for database sessions."""
     session = SessionLocal()
     try:
@@ -87,7 +87,7 @@ class OHLCV(Base):
     low = Column(Float)
     close = Column(Float)
     volume = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index("idx_ohlcv_symbol_date", "symbol", "date", unique=True),
@@ -102,15 +102,20 @@ class Zone(Base):
     symbol = Column(String(20), nullable=False, index=True)
     low = Column(Float, nullable=False)
     high = Column(Float, nullable=False)
-    strength = Column(String(2), nullable=False)  # "强", "中", "弱"
+    strength = Column(String(10), nullable=False)  # "strong", "medium", "weak"
     note = Column(Text, default="")
     is_active = Column(Integer, default=1)  # 1 = active, 0 = archived
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
 
     __table_args__ = (
         Index("idx_zones_symbol_active", "symbol", "is_active"),
-        CheckConstraint("strength IN ('强', '中', '弱')", name="chk_strength"),
+        CheckConstraint("strength IN ('strong', 'medium', 'weak')", name="chk_strength"),
         CheckConstraint("low < high", name="chk_low_high"),
     )
 
@@ -125,7 +130,7 @@ class Alert(Base):
     zone_id = Column(Integer, ForeignKey("zones.id"), nullable=True)
     trigger_type = Column(String(10), nullable=False)  # "open" or "close"
     flip_suggested = Column(Integer, default=0)  # 1 = flip recommended
-    sent_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    sent_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         CheckConstraint("trigger_type IN ('open', 'close')", name="chk_trigger_type"),
@@ -144,7 +149,7 @@ class Journal(Base):
     shares = Column(Float)
     note = Column(Text, default="")
     is_shadow = Column(Integer, default=0)  # 1 = hypothetical trade
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     __table_args__ = (
         CheckConstraint("action IN ('buy', 'sell', 'shadow')", name="chk_action"),

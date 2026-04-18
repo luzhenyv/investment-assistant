@@ -3,7 +3,7 @@ Zone store: CRUD for support/resistance zones using SQLAlchemy ORM.
 All functions return Zone ORM objects directly (no dict conversion).
 """
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from investment_assistant.core.database import get_session, Zone
@@ -14,7 +14,7 @@ from investment_assistant.core.database import get_session, Zone
 def add_zone(symbol: str, low: float, high: float,
              strength: str, note: str = "") -> int:
     """Insert a new zone. Returns the new zone id."""
-    assert strength in ("强", "中", "弱"), f"Invalid strength: {strength}"
+    assert strength in ("strong", "medium", "weak"), f"Invalid strength: {strength}"
     assert low < high, "low must be less than high"
     
     with get_session() as session:
@@ -49,7 +49,7 @@ def update_zone(zone_id: int, **kwargs) -> Zone:
         
         for key, val in updates.items():
             setattr(zone, key, val)
-        zone.updated_at = datetime.utcnow()
+        zone.updated_at = datetime.now(timezone.utc)
     
     return zone
 
@@ -73,7 +73,7 @@ def flip_zone(zone_id: int, note_suffix: str = "⇄ flipped") -> Zone:
         existing = zone.note or ""
         new_note = f"{existing} [{note_suffix}]".strip()
         zone.note = new_note
-        zone.updated_at = datetime.utcnow()
+        zone.updated_at = datetime.now(timezone.utc)
     
     return zone
 
