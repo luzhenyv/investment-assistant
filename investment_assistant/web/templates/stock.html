@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %} · {{ symbol }}{% endblock %}
+{% block content %}
+
+<div style="display:flex; align-items:baseline; gap:16px; margin-bottom:20px;">
+  <h1 style="margin:0">{{ symbol }}</h1>
+  {% if price %}
+    <span style="font-size:22px; font-weight:600">${{ "%.2f"|format(price) }}</span>
+  {% endif %}
+  <a href="/" style="color:var(--muted); font-size:13px;">← 返回</a>
+</div>
+
+<!-- ── Zone list ──────────────────────────────────────────────────────── -->
+<h2>支撑 / 压力区间</h2>
+
+{% if zones %}
+<div class="card" style="padding:0; overflow:hidden;">
+<table>
+  <thead>
+    <tr>
+      <th>区间</th>
+      <th>强度</th>
+      <th>当前位置</th>
+      <th>备注</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for z in zones %}
+    {% if price %}
+      {% if price >= z.low and price <= z.high %}
+        {% set pos = "🎯 价格在区间内" %}
+      {% elif price < z.low %}
+        {% set pos = "↑ 支撑（价格在下方）" %}
+      {% else %}
+        {% set pos = "↓ 压力（价格在上方）" %}
+      {% endif %}
+    {% else %}
+      {% set pos = "—" %}
+    {% endif %}
+
+    <tr id="zone-{{ z.id }}">
+      <td><strong>${{ z.low }} – ${{ z.high }}</strong></td>
+      <td>
+        <span class="badge badge-{{ 'strong' if z.strength == '强' else ('mid' if z.strength == '中' else 'weak') }}">
+          {{ z.strength }}
+        </span>
+      </td>
+      <td class="muted" style="font-size:12px;">{{ pos }}</td>
+      <td class="note-text">{{ z.note or "—" }}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="toggleEdit({{ z.id }})">编辑</button>
+        <form class="inline" action="/zone/{{ z.id }}/flip" method="post">
+          <button class="btn btn-ghost btn-sm" title="确认翻转（支撑↔压力）">翻转</button>
+        </form>
+        <form class="inline" action="/zone/{{ z.id }}/deactivate" method="post"
+              onsubmit="return confirm('归档此区间？')">
+          <button class="btn btn-danger btn-sm">归档</button>
+        </form>
+      </td>
+    </tr>
+
+    <!-- Inline edit row (hidden by default) -->
+    <tr id="edit-{{ z.id }}" style="display:none; background:var(--bg3);">
+      <td colspan="5">
+        <form action="/zone/{{ z.id }}/edit" method="post" style="padding:8px 0;">
+          <div class="form-row">
+            <div>
+              <label>低点</label>
+              <input name="low" type="number" step="0.01" value="{{ z.low }}" required>
+            </div>
+            <div>
+              <label>高点</label>
+              <input name="high" type="number" step="0.01" value="{{ z.high }}" required>
+            </div>
+            <div>
+              <label>强度</label>
+              <select name="strength">
+                <option value="强" {% if z.strength == '强' %}selected{% endif %}>强</option>
+                <option value="中" {% if z.strength == '中' %}selected{% endif %}>中</option>
+                <option value="弱" {% if z.strength == '弱' %}selected{% endif %}>弱</option>
+              </select>
+            </div>
+            <div style="grid-column: span 2;">
+              <label>备注</label>
+              <input name="note" type="text" value="{{ z.note }}">
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" type="submit">保存</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="toggleEdit({{ z.id }})">取消</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+  <p class="muted" style="margin-bottom:20px;">还没有区间，添加第一个 ↓</p>
+{% endif %}
+
+<!-- ── Add zone form ──────────────────────────────────────────────────── -->
+<h2 style="margin-top:28px;">添加新区间</h2>
+<div class="card">
+  <form action="/stock/{{ symbol }}/zone/add" method="post">
+    <div class="form-row">
+      <div>
+        <label>低点</label>
+        <input name="low" type="number" step="0.01" placeholder="e.g. 315" required>
+      </div>
+      <div>
+        <label>高点</label>
+        <input name="high" type="number" step="0.01" placeholder="e.g. 330" required>
+      </div>
+      <div>
+        <label>强度</label>
+        <select name="strength">
+          <option value="强">强</option>
+          <option value="中" selected>中</option>
+          <option value="弱">弱</option>
+        </select>
+      </div>
+      <div style="grid-column: span 2;">
+        <label>备注（可选）</label>
+        <input name="note" type="text" placeholder="e.g. 长线支撑，Fibonacci 61.8%">
+      </div>
+    </div>
+    <button class="btn btn-primary" type="submit">添加</button>
+  </form>
+</div>
+
+<script>
+function toggleEdit(id) {
+  const row = document.getElementById('edit-' + id);
+  row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+}
+</script>
+{% endblock %}

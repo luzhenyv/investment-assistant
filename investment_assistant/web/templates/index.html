@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %} · Watchlist{% endblock %}
+{% block content %}
+<h1>Watchlist</h1>
+
+<table>
+  <thead>
+    <tr>
+      <th>股票</th>
+      <th>最新收盘</th>
+      <th>区间数</th>
+      <th>支撑区</th>
+      <th>压力区</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in watchlist %}
+    {% set price = s.price %}
+    <tr>
+      <td><strong>{{ s.symbol }}</strong></td>
+      <td>
+        {% if price %}
+          <span class="price-neutral">${{ "%.2f"|format(price) }}</span>
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td>{{ s.zone_count }}</td>
+      <td>
+        {% for z in s.zones if price and z.low <= price %}
+          <span class="badge badge-{{ 'strong' if z.strength == '强' else ('mid' if z.strength == '中' else 'weak') }}">
+            {{ z.low }}–{{ z.high }}
+          </span>
+        {% endfor %}
+      </td>
+      <td>
+        {% for z in s.zones if price and z.high < price %}
+          <span class="badge badge-{{ 'strong' if z.strength == '强' else ('mid' if z.strength == '中' else 'weak') }}">
+            {{ z.low }}–{{ z.high }}
+          </span>
+        {% endfor %}
+      </td>
+      <td><a href="/stock/{{ s.symbol }}" class="btn btn-ghost btn-sm">管理</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
