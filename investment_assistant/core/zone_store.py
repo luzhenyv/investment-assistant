@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from investment_assistant.core.database import get_session, Zone
+from investment_assistant.database import get_session, Zone
 
 
 # ── Write ─────────────────────────────────────────────────────────────────────

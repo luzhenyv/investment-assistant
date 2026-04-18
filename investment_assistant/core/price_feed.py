@@ -13,7 +13,7 @@ import pandas as pd
 import yfinance as yf
 from sqlalchemy import func
 
-from investment_assistant.core.database import get_session, OHLCV
+from investment_assistant.database import get_session, OHLCV
 from investment_assistant.config import SETTINGS
 
 
@@ -205,7 +205,7 @@ def get_latest_open(symbol: str) -> Optional[float]:
 
 if __name__ == "__main__":
     # Quick smoke test
-    from investment_assistant.core.database import init_db
+    from investment_assistant.database import init_db
     init_db()
     feed = YahooFeed()
     sync_symbol("AAPL", feed)
