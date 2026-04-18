@@ -47,7 +47,7 @@ async def _send_async(text: str) -> None:
 
 
 def send_message(text: str) -> None:
-    """Sync wrapper — safe to call from scheduler or Flask."""
+    """Sync wrapper — safe to call from scheduler or FastAPI handlers."""
     asyncio.run(_send_async(text))
 
 
