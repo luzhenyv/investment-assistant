@@ -29,14 +29,14 @@
       <td>{{ s.zone_count }}</td>
       <td>
         {% for z in s.zones if price and z.low <= price %}
-          <span class="badge badge-{{ 'strong' if z.strength == '强' else ('mid' if z.strength == '中' else 'weak') }}">
+          <span class="badge badge-{{ 'strong' if z.strength == 'strong' else ('mid' if z.strength == 'medium' else 'weak') }}">
             {{ z.low }}–{{ z.high }}
           </span>
         {% endfor %}
       </td>
       <td>
         {% for z in s.zones if price and z.high < price %}
-          <span class="badge badge-{{ 'strong' if z.strength == '强' else ('mid' if z.strength == '中' else 'weak') }}">
+          <span class="badge badge-{{ 'strong' if z.strength == 'strong' else ('mid' if z.strength == 'medium' else 'weak') }}">
             {{ z.low }}–{{ z.high }}
           </span>
         {% endfor %}

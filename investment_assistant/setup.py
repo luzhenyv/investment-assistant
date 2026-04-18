@@ -23,8 +23,8 @@ for sym in ["AAPL", "MSFT", "^GSPC", "^VIX"]:
 
 print("\n3. Adding sample zones for AAPL...")
 if not get_zones("AAPL"):
-    add_zone("AAPL", 170.0, 185.0, "强", "长线支撑")
-    add_zone("AAPL", 200.0, 215.0, "中", "压力区")
+    add_zone("AAPL", 170.0, 185.0, "strong", "长线支撑")
+    add_zone("AAPL", 200.0, 215.0, "medium", "压力区")
 zones = get_zones("AAPL")
 print(f"   {len(zones)} zones: {[(z.low, z.high, z.strength) for z in zones]}")
 

@@ -42,7 +42,7 @@
     <tr id="zone-{{ z.id }}">
       <td><strong>${{ z.low }} – ${{ z.high }}</strong></td>
       <td>
-        <span class="badge badge-{{ 'strong' if z.strength == '强' else ('mid' if z.strength == '中' else 'weak') }}">
+        <span class="badge badge-{{ 'strong' if z.strength == 'strong' else ('mid' if z.strength == 'medium' else 'weak') }}">
           {{ z.strength }}
         </span>
       </td>
@@ -76,9 +76,9 @@
             <div>
               <label>强度</label>
               <select name="strength">
-                <option value="强" {% if z.strength == '强' %}selected{% endif %}>强</option>
-                <option value="中" {% if z.strength == '中' %}selected{% endif %}>中</option>
-                <option value="弱" {% if z.strength == '弱' %}selected{% endif %}>弱</option>
+                <option value="strong" {% if z.strength == 'strong' %}selected{% endif %}>strong</option>
+                <option value="medium" {% if z.strength == 'medium' %}selected{% endif %}>medium</option>
+                <option value="weak" {% if z.strength == 'weak' %}selected{% endif %}>weak</option>
               </select>
             </div>
             <div style="grid-column: span 2;">
@@ -115,9 +115,9 @@
       <div>
         <label>强度</label>
         <select name="strength">
-          <option value="强">强</option>
-          <option value="中" selected>中</option>
-          <option value="弱">弱</option>
+          <option value="strong">strong</option>
+          <option value="medium" selected>medium</option>
+          <option value="weak">weak</option>
         </select>
       </div>
       <div style="grid-column: span 2;">
