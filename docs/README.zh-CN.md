@@ -65,7 +65,7 @@ uv run python investment_assistant/notify/telegram_bot.py
 - TELEGRAM_BOT_TOKEN
 - TELEGRAM_CHAT_ID
 - WATCHLIST（逗号分隔）
-- PRICE_FEED_BACKEND
+- PRICE_FEED_BACKEND（默认：`investment_assistant.services.prices.YahooFeed`）
 - OHLCV_HISTORY_YEARS
 - FLIP_THRESHOLD_PCT
 - DAILY_JOB_TIME_ET

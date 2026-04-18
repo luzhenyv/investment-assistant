@@ -58,7 +58,7 @@ Optional overrides:
 
 ```dotenv
 WATCHLIST=AAPL,MSFT,NVDA,TSLA
-PRICE_FEED_BACKEND=core.price_feed.YahooFeed
+PRICE_FEED_BACKEND=investment_assistant.services.prices.YahooFeed
 OHLCV_HISTORY_YEARS=5
 FLIP_THRESHOLD_PCT=2.0
 DAILY_JOB_TIME_ET=16:30
@@ -116,29 +116,39 @@ investment_assistant/
     zone_store.py
     alert_engine.py
     digest_builder.py
-  notify/
-    telegram_bot.py
-  web/
-    app.py
-    templates/
-      base.html
-      index.html
-      stock.html
-  scheduler/
-    daily_job.py
-data/
-  trading.db            # auto-created
-```
-
-## Configuration Notes
-
-Configuration is centralized in investment_assistant/config.py.
-
-- Settings are loaded with pydantic-settings.
-- .env at repository root is loaded automatically.
-- Environment variables override defaults.
-- Existing module-level constants are kept for backward compatibility.
-
+  ```text
+  investment_assistant/
+    config.py
+    setup.py
+    log.py                  # logging setup
+    core/
+      alerts.py             # alert detection logic
+      zones.py              # zone CRUD (repository)
+      digest.py             # daily digest assembler
+    services/
+      prices.py             # price feed adapter (Yahoo Finance + OHLCV cache)
+    database/
+      models/
+        alert.py
+        journal.py
+        ohlcv.py
+        zone.py
+      base.py
+      init_db.py
+      session.py
+    notify/
+      telegram_bot.py
+    web/
+      app.py
+      templates/
+        base.html
+        index.html
+        stock.html
+    scheduler/
+      daily_job.py
+  data/
+    trading.db            # auto-created
+  ```
 ## Roadmap
 
 - Phase 1: Manual zones + alerts + digest + web management
