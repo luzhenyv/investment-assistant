@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     )
 
     data_dir: Path = ROOT_DIR / "data"
+    log_dir: Path = ROOT_DIR / "logs"
     db_path: Path | None = None
+    log_level: str = "INFO"
 
     price_feed_backend: str = "core.price_feed.YahooFeed"
     ohlcv_history_years: int = 5
@@ -76,6 +78,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     settings = Settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    settings.log_dir.mkdir(parents=True, exist_ok=True)
     if settings.db_path is None:
         settings.db_path = settings.data_dir / "trading.db"
     return settings

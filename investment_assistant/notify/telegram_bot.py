@@ -19,24 +19,26 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import asyncio
-import logging
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
 
 from investment_assistant.config import SETTINGS
+from investment_assistant.core.logging_setup import setup_logging, get_logger
 from investment_assistant.core.price_feed import get_latest_close
 from investment_assistant.core.zone_store import get_zones, flip_zone, get_zone_by_id
 from investment_assistant.core.digest_builder import build_digest
 
-log = logging.getLogger(__name__)
+setup_logging(SETTINGS.log_dir, SETTINGS.log_level, service="telegram")
+log = get_logger(__name__)
 
 
 # ── Push (fire-and-forget) ─────────────────────────────────────────────────────
 
 async def _send_async(text: str) -> None:
     if not SETTINGS.telegram_bot_token or not SETTINGS.telegram_chat_id:
-        print("[telegram] No credentials — stdout:\n" + text)
+        log.warning("Telegram credentials are not configured. Printing digest to terminal.")
+        log.info("[telegram fallback]\n%s", text)
         return
     async with Bot(token=SETTINGS.telegram_bot_token) as bot:
         await bot.send_message(
@@ -156,14 +158,10 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # ── Bot runner (polling mode) ──────────────────────────────────────────────────
 
 def run_bot() -> None:
+    setup_logging(SETTINGS.log_dir, SETTINGS.log_level, service="telegram")
     if not SETTINGS.telegram_bot_token:
-        print("[telegram] TELEGRAM_BOT_TOKEN not set. Export it and retry.")
+        log.error("TELEGRAM_BOT_TOKEN is not set. Export it and retry.")
         sys.exit(1)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
 
     app = Application.builder().token(SETTINGS.telegram_bot_token).build()
     app.add_handler(CommandHandler("help",   cmd_help))
@@ -172,7 +170,7 @@ def run_bot() -> None:
     app.add_handler(CommandHandler("flip",   cmd_flip))
     app.add_handler(CommandHandler("digest", cmd_digest))
 
-    print("[telegram] Bot started. Send /help to your bot.")
+    log.info("Telegram bot started. Send /help to your bot.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

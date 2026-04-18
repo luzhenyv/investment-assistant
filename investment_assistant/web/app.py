@@ -11,21 +11,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from investment_assistant.core.database import init_db
+from investment_assistant.config import SETTINGS
+from investment_assistant.database import init_db
+from investment_assistant.core.logging_setup import setup_logging, get_logger
 from investment_assistant.core.zone_store import (
     add_zone, update_zone, deactivate_zone, flip_zone,
     get_zones, get_zone_by_id, get_all_active_zones,
 )
 from investment_assistant.core.price_feed import get_latest_close
-from investment_assistant.config import SETTINGS
 
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 app = FastAPI(title="Investment Assistant Web")
+log = get_logger(__name__)
 
 
 @app.on_event("startup")
 def _startup() -> None:
+    setup_logging(SETTINGS.log_dir, SETTINGS.log_level, service="web")
     init_db()
+    log.info("Web app startup complete.")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────

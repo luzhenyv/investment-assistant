@@ -14,20 +14,15 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-import logging
-from datetime import datetime
-
-from investment_assistant.core.database import init_db
+from investment_assistant.database import init_db
 from investment_assistant.core.price_feed import sync_all, get_feed
 from investment_assistant.core.digest_builder import build_digest
+from investment_assistant.core.logging_setup import setup_logging, get_logger
 from investment_assistant.notify.telegram_bot import send_digest
 from investment_assistant.config import SETTINGS
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-log = logging.getLogger(__name__)
+setup_logging(SETTINGS.log_dir, SETTINGS.log_level, service="scheduler")
+log = get_logger(__name__)
 
 
 def run() -> None:
