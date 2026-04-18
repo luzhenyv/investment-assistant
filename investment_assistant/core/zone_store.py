@@ -1,15 +1,12 @@
 """
-Zone store: CRUD for support/resistance zones.
-All persistence goes through this module — callers never touch DB directly.
+Zone store: CRUD for support/resistance zones using SQLAlchemy ORM.
+All functions return Zone ORM objects directly (no dict conversion).
 """
 from __future__ import annotations
 from datetime import datetime
 from typing import Optional
-from investment_assistant.core.database import get_conn
 
-
-def _now() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+from investment_assistant.core.database import get_session, Zone
 
 
 # ── Write ─────────────────────────────────────────────────────────────────────
@@ -19,80 +16,110 @@ def add_zone(symbol: str, low: float, high: float,
     """Insert a new zone. Returns the new zone id."""
     assert strength in ("强", "中", "弱"), f"Invalid strength: {strength}"
     assert low < high, "low must be less than high"
-    now = _now()
-    with get_conn() as conn:
-        cur = conn.execute(
-            """INSERT INTO zones (symbol, low, high, strength, note, is_active, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
-            (symbol.upper(), low, high, strength, note, now, now),
+    
+    with get_session() as session:
+        zone = Zone(
+            symbol=symbol.upper(),
+            low=low,
+            high=high,
+            strength=strength,
+            note=note,
+            is_active=1,
         )
-    return cur.lastrowid
+        session.add(zone)
+        session.flush()  # ensure id is assigned
+        zone_id = zone.id
+    
+    return zone_id
 
 
-def update_zone(zone_id: int, **kwargs) -> None:
+def update_zone(zone_id: int, **kwargs) -> Zone:
     """
     Update one or more fields of an existing zone.
     Allowed keys: low, high, strength, note, is_active
+    Returns the updated Zone ORM object.
     """
     allowed = {"low", "high", "strength", "note", "is_active"}
     updates = {k: v for k, v in kwargs.items() if k in allowed}
-    if not updates:
-        return
-    updates["updated_at"] = _now()
-    sets = ", ".join(f"{k} = ?" for k in updates)
-    vals = list(updates.values()) + [zone_id]
-    with get_conn() as conn:
-        conn.execute(f"UPDATE zones SET {sets} WHERE id = ?", vals)
+    
+    with get_session() as session:
+        zone = session.query(Zone).filter(Zone.id == zone_id).first()
+        if not zone:
+            raise ValueError(f"Zone {zone_id} not found")
+        
+        for key, val in updates.items():
+            setattr(zone, key, val)
+        zone.updated_at = datetime.utcnow()
+    
+    return zone
 
 
-def deactivate_zone(zone_id: int) -> None:
-    """Soft-delete: mark zone inactive instead of deleting."""
-    update_zone(zone_id, is_active=0)
+def deactivate_zone(zone_id: int) -> Zone:
+    """Soft-delete: mark zone inactive. Returns updated Zone object."""
+    return update_zone(zone_id, is_active=0)
 
 
-def flip_zone(zone_id: int, note_suffix: str = "⇄ flipped") -> None:
+def flip_zone(zone_id: int, note_suffix: str = "⇄ flipped") -> Zone:
     """
     Confirm a flip suggested by the alert engine.
     Keeps the price range but appends a note so history is preserved.
-    The caller decides what 'flip' means semantically — the zone itself
-    is neutral; its relationship to current price determines support vs resistance.
+    Returns the updated Zone object.
     """
-    with get_conn() as conn:
-        row = conn.execute("SELECT note FROM zones WHERE id = ?", (zone_id,)).fetchone()
-    if not row:
-        return
-    existing = row["note"] or ""
-    new_note = f"{existing} [{note_suffix}]".strip()
-    update_zone(zone_id, note=new_note)
+    with get_session() as session:
+        zone = session.query(Zone).filter(Zone.id == zone_id).first()
+        if not zone:
+            raise ValueError(f"Zone {zone_id} not found")
+        
+        existing = zone.note or ""
+        new_note = f"{existing} [{note_suffix}]".strip()
+        zone.note = new_note
+        zone.updated_at = datetime.utcnow()
+    
+    return zone
 
 
 # ── Read ──────────────────────────────────────────────────────────────────────
 
-def get_zones(symbol: str, active_only: bool = True) -> list[dict]:
-    """Return all zones for a symbol, ordered by low price."""
-    query = "SELECT * FROM zones WHERE symbol = ?"
-    params: list = [symbol.upper()]
-    if active_only:
-        query += " AND is_active = 1"
-    query += " ORDER BY low"
-    with get_conn() as conn:
-        rows = conn.execute(query, params).fetchall()
-    return [dict(r) for r in rows]
+def get_zones(symbol: str, active_only: bool = True) -> list[Zone]:
+    """Return all Zone ORM objects for a symbol, ordered by low price."""
+    with get_session() as session:
+        query = session.query(Zone).filter(Zone.symbol == symbol.upper())
+        if active_only:
+            query = query.filter(Zone.is_active == 1)
+        zones = query.order_by(Zone.low).all()
+        # Force load all attributes before exiting session
+        for z in zones:
+            _ = z.id, z.symbol, z.low, z.high, z.strength, z.note, z.is_active, z.created_at, z.updated_at
+    
+    return zones
 
 
-def get_zone_by_id(zone_id: int) -> Optional[dict]:
-    with get_conn() as conn:
-        row = conn.execute("SELECT * FROM zones WHERE id = ?", (zone_id,)).fetchone()
-    return dict(row) if row else None
+def get_zone_by_id(zone_id: int) -> Optional[Zone]:
+    """Get a single Zone ORM object by id."""
+    with get_session() as session:
+        zone = session.query(Zone).filter(Zone.id == zone_id).first()
+        if zone:
+            # Force load all attributes before exiting session
+            _ = zone.id, zone.symbol, zone.low, zone.high, zone.strength, zone.note, zone.is_active, zone.created_at, zone.updated_at
+    
+    return zone
 
 
-def get_all_active_zones() -> dict[str, list[dict]]:
-    """Return {symbol: [zones]} for every symbol that has active zones."""
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM zones WHERE is_active = 1 ORDER BY symbol, low"
-        ).fetchall()
-    result: dict[str, list[dict]] = {}
-    for r in rows:
-        result.setdefault(r["symbol"], []).append(dict(r))
-    return result
+def get_all_active_zones() -> dict[str, list[Zone]]:
+    """Return {symbol: [Zone ORM objects]} for every symbol that has active zones."""
+    with get_session() as session:
+        zones = (
+            session.query(Zone)
+            .filter(Zone.is_active == 1)
+            .order_by(Zone.symbol, Zone.low)
+            .all()
+        )
+        
+        result: dict[str, list[Zone]] = {}
+        for z in zones:
+            # Force load all attributes before exiting session
+            _ = z.id, z.symbol, z.low, z.high, z.strength, z.note, z.is_active, z.created_at, z.updated_at
+            result.setdefault(z.symbol, []).append(z)
+        
+        return result
+

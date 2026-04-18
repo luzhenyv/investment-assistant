@@ -100,13 +100,13 @@ def zone_edit(
         strength = strength,
         note     = note,
     )
-    return RedirectResponse(url=f"/stock/{zone['symbol']}", status_code=303)
+    return RedirectResponse(url=f"/stock/{zone.symbol}", status_code=303)
 
 
 @app.post("/zone/{zone_id}/deactivate")
 def zone_deactivate(zone_id: int):
     zone = get_zone_by_id(zone_id)
-    symbol = zone["symbol"] if zone else "/"
+    symbol = zone.symbol if zone else "/"
     deactivate_zone(zone_id)
     if symbol == "/":
         return RedirectResponse(url="/", status_code=303)
@@ -116,7 +116,7 @@ def zone_deactivate(zone_id: int):
 @app.post("/zone/{zone_id}/flip")
 def zone_flip(zone_id: int):
     zone = get_zone_by_id(zone_id)
-    symbol = zone["symbol"] if zone else "/"
+    symbol = zone.symbol if zone else "/"
     flip_zone(zone_id)
     if symbol == "/":
         return RedirectResponse(url="/", status_code=303)
@@ -127,7 +127,22 @@ def zone_flip(zone_id: int):
 
 @app.get("/api/zones/{symbol}")
 def api_zones(symbol: str):
-    return get_zones(symbol.upper())
+    """Return zones as serializable dicts for JSON response."""
+    zones = get_zones(symbol.upper())
+    return [
+        {
+            "id": z.id,
+            "symbol": z.symbol,
+            "low": z.low,
+            "high": z.high,
+            "strength": z.strength,
+            "note": z.note,
+            "is_active": z.is_active,
+            "created_at": z.created_at.isoformat() if z.created_at else None,
+            "updated_at": z.updated_at.isoformat() if z.updated_at else None,
+        }
+        for z in zones
+    ]
 
 
 @app.get("/api/price/{symbol}")

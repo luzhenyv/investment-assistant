@@ -1,17 +1,14 @@
 """
-Digest builder.
-
-Assembles the end-of-day Telegram report:
-  • Macro snapshot (SPX, VIX, DXY, OIL, GOLD)
-  • Watchlist stocks that touched a zone today
-  • Any flip suggestions
+Digest builder: assembles end-of-day Telegram reports using ORM objects.
+Returns ORM objects directly, no dict conversion.
 """
 from __future__ import annotations
-from datetime import date
+from datetime import date, datetime
+
 from investment_assistant.core.price_feed import get_latest_close, get_latest_open
 from investment_assistant.core.zone_store import get_all_active_zones
 from investment_assistant.core.alert_engine import run_alert_check, Alert
-from investment_assistant.core.database import get_conn
+from investment_assistant.core.database import get_session, Alert as AlertModel
 from investment_assistant.config import SETTINGS
 
 
@@ -32,19 +29,32 @@ def _macro_snapshot() -> str:
     return "\n".join(lines)
 
 
-def _save_alert(alert: Alert) -> None:
-    with get_conn() as conn:
-        conn.execute(
-            """INSERT INTO alerts (symbol, price, zone_id, trigger_type, flip_suggested, sent_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (alert.symbol, alert.price, alert.zone["id"],
-             alert.trigger_type, int(alert.flip_suggested), alert.sent_at),
+def _save_alert(alert: Alert) -> AlertModel:
+    """Persist an alert to the database. Returns the AlertModel ORM object."""
+    # Convert ISO string to datetime object for SQLAlchemy DateTime type
+    sent_at = datetime.fromisoformat(alert.sent_at.replace('Z', '+00:00')) if isinstance(alert.sent_at, str) else alert.sent_at
+    
+    with get_session() as session:
+        db_alert = AlertModel(
+            symbol=alert.symbol,
+            price=alert.price,
+            zone_id=alert.zone["id"],
+            trigger_type=alert.trigger_type,
+            flip_suggested=int(alert.flip_suggested),
+            sent_at=sent_at,
         )
+        session.add(db_alert)
+        session.flush()
+        alert_id = db_alert.id
+    
+    # Fetch and return the persisted object
+    with get_session() as session:
+        return session.query(AlertModel).filter(AlertModel.id == alert_id).first()
 
 
 def build_digest() -> tuple[str, list[Alert]]:
     """
-    Returns (message_text, alerts_list).
+    Build end-of-day digest. Returns (message_text, list of Alert dataclass objects).
     Caller decides where to send the message.
     """
     today = date.today().isoformat()
@@ -57,7 +67,11 @@ def build_digest() -> tuple[str, list[Alert]]:
             continue
         open_px  = get_latest_open(symbol)
         close_px = get_latest_close(symbol)
-        alerts   = run_alert_check(symbol, zones, open_px, close_px)
+        
+        # alert_engine returns Alert dataclass objects
+        alerts = run_alert_check(symbol, zones, open_px, close_px)
+        
+        # Persist each alert and collect triggered
         for a in alerts:
             _save_alert(a)
         triggered.extend(alerts)
@@ -96,3 +110,4 @@ def build_single_alert_message(alert: Alert) -> str:
         f"{alert.trigger_type.capitalize()} 价格: ${alert.price:.2f}\n"
         f"区间: {alert.zone_label}{note}{flip}"
     )
+

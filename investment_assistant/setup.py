@@ -26,7 +26,7 @@ if not get_zones("AAPL"):
     add_zone("AAPL", 170.0, 185.0, "强", "长线支撑")
     add_zone("AAPL", 200.0, 215.0, "中", "压力区")
 zones = get_zones("AAPL")
-print(f"   {len(zones)} zones: {[(z['low'], z['high'], z['strength']) for z in zones]}")
+print(f"   {len(zones)} zones: {[(z.low, z.high, z.strength) for z in zones]}")
 
 print("\n4. Running alert check for AAPL...")
 price = get_latest_close("AAPL")
