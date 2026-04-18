@@ -209,3 +209,4 @@ __marimo__/
 # Local project
 files/
 .DS_Store
+uv.lock

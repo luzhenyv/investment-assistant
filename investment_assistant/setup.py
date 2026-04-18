@@ -40,4 +40,4 @@ print("\n5. Building digest (no Telegram send)...")
 msg, alerts = build_digest()
 print(msg[:600])
 
-print("\n✅ Setup complete. Run the web interface with:  python web/app.py")
+print("\n✅ Setup complete. Run the web interface with:  uv run uvicorn investment_assistant.web.app:app --reload")
