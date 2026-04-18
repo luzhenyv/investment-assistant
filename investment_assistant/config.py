@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     db_path: Path | None = None
     log_level: str = "INFO"
 
-    price_feed_backend: str = "core.price_feed.YahooFeed"
+    price_feed_backend: str = "investment_assistant.services.prices.YahooFeed"
     ohlcv_history_years: int = 5
 
     watchlist: list[str] = [

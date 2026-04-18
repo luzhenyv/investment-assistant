@@ -13,12 +13,12 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from investment_assistant.config import SETTINGS
 from investment_assistant.database import init_db
-from investment_assistant.core.logging_setup import setup_logging, get_logger
-from investment_assistant.core.zone_store import (
+from investment_assistant.log import setup_logging, get_logger
+from investment_assistant.core.zones import (
     add_zone, update_zone, deactivate_zone, flip_zone,
     get_zones, get_zone_by_id, get_all_active_zones,
 )
-from investment_assistant.core.price_feed import get_latest_close
+from investment_assistant.services.prices import get_latest_close
 
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 app = FastAPI(title="Investment Assistant Web")

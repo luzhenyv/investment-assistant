@@ -24,10 +24,10 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
 
 from investment_assistant.config import SETTINGS
-from investment_assistant.core.logging_setup import setup_logging, get_logger
-from investment_assistant.core.price_feed import get_latest_close
-from investment_assistant.core.zone_store import get_zones, flip_zone, get_zone_by_id
-from investment_assistant.core.digest_builder import build_digest
+from investment_assistant.log import setup_logging, get_logger
+from investment_assistant.services.prices import get_latest_close
+from investment_assistant.core.zones import get_zones, flip_zone, get_zone_by_id
+from investment_assistant.core.digest import build_digest
 
 setup_logging(SETTINGS.log_dir, SETTINGS.log_level, service="telegram")
 log = get_logger(__name__)

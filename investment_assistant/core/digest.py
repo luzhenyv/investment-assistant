@@ -5,9 +5,9 @@ Returns ORM objects directly, no dict conversion.
 from __future__ import annotations
 from datetime import date, datetime
 
-from investment_assistant.core.price_feed import get_latest_close, get_latest_open
-from investment_assistant.core.zone_store import get_all_active_zones
-from investment_assistant.core.alert_engine import run_alert_check, Alert
+from investment_assistant.services.prices import get_latest_close, get_latest_open
+from investment_assistant.core.zones import get_all_active_zones
+from investment_assistant.core.alerts import run_alert_check, Alert
 from investment_assistant.database import get_session, Alert as AlertModel
 from investment_assistant.config import SETTINGS
 

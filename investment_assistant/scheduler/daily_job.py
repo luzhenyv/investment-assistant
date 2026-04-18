@@ -15,9 +15,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from investment_assistant.database import init_db
-from investment_assistant.core.price_feed import sync_all, get_feed
-from investment_assistant.core.digest_builder import build_digest
-from investment_assistant.core.logging_setup import setup_logging, get_logger
+from investment_assistant.services.prices import sync_all, get_feed
+from investment_assistant.core.digest import build_digest
+from investment_assistant.log import setup_logging, get_logger
 from investment_assistant.notify.telegram_bot import send_digest
 from investment_assistant.config import SETTINGS
 

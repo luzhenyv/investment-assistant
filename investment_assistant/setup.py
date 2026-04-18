@@ -6,12 +6,12 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from investment_assistant.config import SETTINGS
-from investment_assistant.core.logging_setup import setup_logging, get_logger
+from investment_assistant.log import setup_logging, get_logger
 from investment_assistant.database import init_db
-from investment_assistant.core.price_feed import sync_symbol, get_ohlcv, get_latest_close, YahooFeed
-from investment_assistant.core.zone_store import add_zone, get_zones
-from investment_assistant.core.alert_engine import run_alert_check
-from investment_assistant.core.digest_builder import build_digest
+from investment_assistant.services.prices import sync_symbol, get_ohlcv, get_latest_close, YahooFeed
+from investment_assistant.core.zones import add_zone, get_zones
+from investment_assistant.core.alerts import run_alert_check
+from investment_assistant.core.digest import build_digest
 
 setup_logging(SETTINGS.log_dir, SETTINGS.log_level, service="setup")
 log = get_logger(__name__)
