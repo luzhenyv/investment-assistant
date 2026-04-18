@@ -56,7 +56,9 @@ class Settings(BaseSettings):
     flip_threshold_pct: float = 2.0
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
-    daily_job_time_et: str = "16:30"
+
+    display_timezone: str = "America/New_York"
+    market_session: str = "US"
 
     @field_validator("watchlist", mode="before")
     @classmethod

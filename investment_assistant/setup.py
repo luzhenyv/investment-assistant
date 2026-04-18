@@ -6,7 +6,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from investment_assistant.config import SETTINGS
-from investment_assistant.log import setup_logging, get_logger
+from investment_assistant.infra.log import setup_logging, get_logger
 from investment_assistant.database import init_db
 from investment_assistant.services.prices import sync_symbol, get_ohlcv, get_latest_close, YahooFeed
 from investment_assistant.core.zones import add_zone, get_zones

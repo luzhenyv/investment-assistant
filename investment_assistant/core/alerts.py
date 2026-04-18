@@ -10,8 +10,9 @@ No side effects. Persistence and notification happen in the caller.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Literal
+
+from investment_assistant.infra.time import utc_now
 from investment_assistant.config import SETTINGS
 
 
@@ -25,7 +26,7 @@ class Alert:
     zone: dict
     trigger_type: TriggerType
     flip_suggested: bool = False
-    sent_at: str = field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    sent_at: str = field(default_factory=lambda: utc_now().strftime("%Y-%m-%dT%H:%M:%SZ"))
 
     @property
     def zone_label(self) -> str:

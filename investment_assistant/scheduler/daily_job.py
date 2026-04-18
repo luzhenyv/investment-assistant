@@ -7,8 +7,8 @@ Sequence:
   3. Send via Telegram
 
 Run directly:  python scheduler/daily_job.py
-Or via cron:   30 16 * * 1-5  cd /path/to/trading_assistant && python scheduler/daily_job.py
-               (16:30 ET = 21:30 UTC on non-DST days — adjust for your timezone)
+Or via cron:   use ``next_run_utc()`` to compute the correct UTC time dynamically
+               (handles DST automatically via market session config).
 """
 import sys
 import os
@@ -17,12 +17,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from investment_assistant.database import init_db
 from investment_assistant.services.prices import sync_all, get_feed
 from investment_assistant.core.digest import build_digest
-from investment_assistant.log import setup_logging, get_logger
+from investment_assistant.infra.log import setup_logging, get_logger
 from investment_assistant.notify.telegram_bot import send_digest
 from investment_assistant.config import SETTINGS
+from investment_assistant.infra.time import get_session_by_name
 
 setup_logging(SETTINGS.log_dir, SETTINGS.log_level, service="scheduler")
 log = get_logger(__name__)
+
+
+def next_run_utc() -> str:
+    """
+    Return the next market close in UTC as an ISO string.
+    Useful for external schedulers or display purposes.
+    """
+    session = get_session_by_name(SETTINGS.market_session)
+    close = session.next_close_utc()
+    return close.isoformat()
 
 
 def run() -> None:

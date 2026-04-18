@@ -24,7 +24,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
 
 from investment_assistant.config import SETTINGS
-from investment_assistant.log import setup_logging, get_logger
+from investment_assistant.infra.log import setup_logging, get_logger
 from investment_assistant.services.prices import get_latest_close
 from investment_assistant.core.zones import get_zones, flip_zone, get_zone_by_id
 from investment_assistant.core.digest import build_digest

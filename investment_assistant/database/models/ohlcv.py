@@ -1,11 +1,10 @@
 """OHLCV model."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from sqlalchemy import Column, DateTime, Float, Index, Integer, String
 
 from investment_assistant.database.base import Base
+from investment_assistant.infra.time import utc_now
 
 
 class OHLCV(Base):
@@ -21,7 +20,7 @@ class OHLCV(Base):
     low = Column(Float)
     close = Column(Float)
     volume = Column(Integer)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=utc_now)
 
     __table_args__ = (
         Index("idx_ohlcv_symbol_date", "symbol", "date", unique=True),

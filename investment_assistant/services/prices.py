@@ -10,6 +10,8 @@ import abc
 from datetime import date, timedelta, datetime
 from typing import Optional
 import pandas as pd
+
+from investment_assistant.infra.time import utc_today
 import yfinance as yf
 from sqlalchemy import func
 
@@ -45,7 +47,7 @@ class YahooFeed(PriceFeed):
         return df[["open", "high", "low", "close", "volume"]]
 
     def fetch_latest(self, symbol: str) -> Optional[dict]:
-        df = self.fetch_history(symbol, date.today() - timedelta(days=5), date.today())
+        df = self.fetch_history(symbol, utc_today() - timedelta(days=5), utc_today())
         if df.empty:
             return None
         row = df.iloc[-1]
@@ -128,11 +130,11 @@ def sync_symbol(symbol: str, feed: Optional[PriceFeed] = None) -> int:
 
     last = _last_stored_date(symbol)
     if last is None:
-        start = date.today() - timedelta(days=365 * SETTINGS.ohlcv_history_years)
+        start = utc_today() - timedelta(days=365 * SETTINGS.ohlcv_history_years)
     else:
         start = last + timedelta(days=1)   # incremental
 
-    end = date.today()
+    end = utc_today()
     if start > end:
         return 0   # already up to date
 
@@ -159,7 +161,7 @@ def get_ohlcv(symbol: str, days: int = 60) -> pd.DataFrame:
     Read cached OHLCV from DB using ORM. Used by the rest of the system —
     no network calls at alert/digest time.
     """
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    cutoff = (utc_today() - timedelta(days=days)).isoformat()
     with get_session() as session:
         rows = session.query(OHLCV).filter(
             OHLCV.symbol == symbol,

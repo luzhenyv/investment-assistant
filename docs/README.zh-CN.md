@@ -68,7 +68,18 @@ uv run python investment_assistant/notify/telegram_bot.py
 - PRICE_FEED_BACKEND（默认：`investment_assistant.services.prices.YahooFeed`）
 - OHLCV_HISTORY_YEARS
 - FLIP_THRESHOLD_PCT
-- DAILY_JOB_TIME_ET
+- DISPLAY_TIMEZONE（显示时区，默认 `America/New_York`）
+- MARKET_SESSION（市场交易时段，默认 `US`，可选 `CN`/`HK`/`JP`）
 - DB_PATH
 
-更多细节与完整使用说明，请查看英文版 [README.md](README.md)。
+## 时间管理
+
+项目内部所有时间戳统一使用 UTC，时区转换仅在展示层（Web 界面、Telegram 消息）进行。
+
+- `infra/time.py` 提供 `utc_now()`、`utc_today()` 作为唯一时间来源
+- `to_tz()` / `format_local()` 将 UTC 转为显示时区（由 `DISPLAY_TIMEZONE` 控制）
+- `MarketSession` 描述交易所交易时段（开盘/收盘时间、交易日、IANA 时区）
+- 内置市场：**US**、**CN**、**HK**、**JP**，通过 `MARKET_SESSION` 选择
+- 常用查询：`is_open()`、`is_trading_day()`、`next_close_utc()`、`minutes_until_close()`
+
+更多细节与完整使用说明，请查看英文版 [README.md](../README.md)。

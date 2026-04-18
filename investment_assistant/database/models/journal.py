@@ -1,11 +1,10 @@
 """Journal model."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from sqlalchemy import CheckConstraint, Column, DateTime, Float, Integer, String, Text
 
 from investment_assistant.database.base import Base
+from investment_assistant.infra.time import utc_now
 
 
 class Journal(Base):
@@ -21,7 +20,7 @@ class Journal(Base):
     shares = Column(Float)
     note = Column(Text, default="")
     is_shadow = Column(Integer, default=0)  # 1 = hypothetical trade
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     __table_args__ = (
         CheckConstraint("action IN ('buy', 'sell', 'shadow')", name="chk_action"),
