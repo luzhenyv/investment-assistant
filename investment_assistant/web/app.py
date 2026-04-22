@@ -24,8 +24,9 @@ from investment_assistant.core.watchlist import (
     add_watchlist_symbol,
     get_watchlist_symbols,
     remove_watchlist_symbol,
+    resolve_symbol_for_source,
 )
-from investment_assistant.services.prices import get_latest_close
+from investment_assistant.services.prices import get_feed, get_latest_close, sync_symbol
 
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 log = get_logger(__name__)
@@ -101,6 +102,35 @@ def watchlist_remove(symbol: str):
     if not removed:
         return _redirect_to_index(f"{symbol.upper()} is not in watchlist.", level="info")
     return _redirect_to_index(f"Removed {symbol.upper()} from watchlist.", level="success")
+
+
+@app.post("/watchlist/sync/{symbol}")
+def watchlist_sync(symbol: str):
+    canonical = symbol.upper()
+    try:
+        source_symbol = resolve_symbol_for_source(canonical, "yfinance")
+        written = sync_symbol(canonical, feed=get_feed(), fetch_symbol=source_symbol)
+        latest = get_latest_close(canonical)
+    except Exception as exc:
+        log.exception("Failed to sync %s", canonical)
+        return _redirect_to_index(f"Failed to sync {canonical}: {exc}", level="error")
+
+    if latest is None:
+        return _redirect_to_index(
+            f"Sync finished for {canonical} but no latest close is available yet.",
+            level="info",
+        )
+
+    if written == 0:
+        return _redirect_to_index(
+            f"{canonical} is up to date. Last close: ${latest:,.2f}.",
+            level="success",
+        )
+
+    return _redirect_to_index(
+        f"Synced {canonical}: +{written} rows. Last close: ${latest:,.2f}.",
+        level="success",
+    )
 
 
 @app.get("/stock/{symbol}")

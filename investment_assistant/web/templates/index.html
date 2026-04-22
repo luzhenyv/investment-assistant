@@ -26,6 +26,7 @@
       <th>Last Close</th>
       <th>Zone Count</th>
       <th>Support Zones</th>
+      <th>Current Zone</th>
       <th>Resistance Zones</th>
       <th>Actions</th>
     </tr>
@@ -51,6 +52,13 @@
         {% endfor %}
       </td>
       <td>
+        {% for z in s.zones if price and z.low <= price and z.high >= price %}
+          <span class="badge badge-{{ 'strong' if z.strength == 'strong' else ('mid' if z.strength == 'medium' else 'weak') }}">
+            {{ z.low }}–{{ z.high }}
+          </span>
+        {% endfor %}
+      </td>
+      <td>
         {% for z in s.zones if price and z.low > price %}
           <span class="badge badge-{{ 'strong' if z.strength == 'strong' else ('mid' if z.strength == 'medium' else 'weak') }}">
             {{ z.low }}–{{ z.high }}
@@ -59,6 +67,9 @@
       </td>
       <td>
         <a href="/stock/{{ s.symbol }}" class="btn btn-ghost btn-sm">Manage</a>
+        <form class="inline" action="/watchlist/sync/{{ s.symbol }}" method="post">
+          <button type="submit" class="btn btn-ghost btn-sm">Sync</button>
+        </form>
         <form class="inline" action="/watchlist/remove/{{ s.symbol }}" method="post" onsubmit="return confirm('Remove {{ s.symbol }} from watchlist?')">
           <button type="submit" class="btn btn-danger btn-sm">Remove</button>
         </form>
