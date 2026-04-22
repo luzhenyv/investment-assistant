@@ -28,16 +28,13 @@ def setup_logging(log_dir: Path, level: str = "INFO", service: str = "app") -> N
     resolved_level = getattr(logging, level.upper(), logging.INFO)
     root.setLevel(resolved_level)
 
-    # Keep one service filter on root; replace it if caller provides a different one.
-    for existing_filter in list(root.filters):
-        if isinstance(existing_filter, _ServiceFilter):
-            root.removeFilter(existing_filter)
-    root.addFilter(_ServiceFilter(service=service))
+    service_filter = _ServiceFilter(service=service)
 
     if not any(getattr(handler, "_investment_console", False) for handler in root.handlers):
         console_handler = logging.StreamHandler()
         console_handler.setLevel(resolved_level)
         console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+        console_handler.addFilter(service_filter)
         console_handler._investment_console = True  # type: ignore[attr-defined]
         root.addHandler(console_handler)
 
@@ -53,6 +50,7 @@ def setup_logging(log_dir: Path, level: str = "INFO", service: str = "app") -> N
         file_handler.setLevel(resolved_level)
         file_handler.suffix = "%Y-%m-%d"
         file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+        file_handler.addFilter(service_filter)
         file_handler._investment_daily_file = True  # type: ignore[attr-defined]
         root.addHandler(file_handler)
 

@@ -210,3 +210,4 @@ __marimo__/
 data/
 .DS_Store
 uv.lock
+logs
