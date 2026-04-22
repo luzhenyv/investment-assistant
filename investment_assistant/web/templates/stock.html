@@ -7,33 +7,33 @@
   {% if price %}
     <span style="font-size:22px; font-weight:600">${{ "%.2f"|format(price) }}</span>
   {% endif %}
-  <a href="/" style="color:var(--muted); font-size:13px;">← 返回</a>
+  <a href="/" style="color:var(--muted); font-size:13px;">← Back</a>
 </div>
 
 <!-- ── Zone list ──────────────────────────────────────────────────────── -->
-<h2>支撑 / 压力区间</h2>
+<h2>Support / Resistance Zones</h2>
 
 {% if zones %}
 <div class="card" style="padding:0; overflow:hidden;">
 <table>
   <thead>
     <tr>
-      <th>区间</th>
-      <th>强度</th>
-      <th>当前位置</th>
-      <th>备注</th>
-      <th>操作</th>
+      <th>Range</th>
+      <th>Strength</th>
+      <th>Position</th>
+      <th>Note</th>
+      <th>Actions</th>
     </tr>
   </thead>
   <tbody>
   {% for z in zones %}
     {% if price %}
       {% if price >= z.low and price <= z.high %}
-        {% set pos = "🎯 价格在区间内" %}
+        {% set pos = "In range" %}
       {% elif price < z.low %}
-        {% set pos = "↑ 支撑（价格在下方）" %}
+        {% set pos = "Resistance (above price)" %}
       {% else %}
-        {% set pos = "↓ 压力（价格在上方）" %}
+        {% set pos = "Support (below price)" %}
       {% endif %}
     {% else %}
       {% set pos = "—" %}
@@ -49,13 +49,13 @@
       <td class="muted" style="font-size:12px;">{{ pos }}</td>
       <td class="note-text">{{ z.note or "—" }}</td>
       <td>
-        <button class="btn btn-ghost btn-sm" onclick="toggleEdit({{ z.id }})">编辑</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleEdit({{ z.id }})">Edit</button>
         <form class="inline" action="/zone/{{ z.id }}/flip" method="post">
-          <button class="btn btn-ghost btn-sm" title="确认翻转（支撑↔压力）">翻转</button>
+          <button class="btn btn-ghost btn-sm" title="Confirm zone flip (support/resistance)">Flip</button>
         </form>
         <form class="inline" action="/zone/{{ z.id }}/deactivate" method="post"
-              onsubmit="return confirm('归档此区间？')">
-          <button class="btn btn-danger btn-sm">归档</button>
+              onsubmit="return confirm('Archive this zone?')">
+          <button class="btn btn-danger btn-sm">Archive</button>
         </form>
       </td>
     </tr>
@@ -66,15 +66,15 @@
         <form action="/zone/{{ z.id }}/edit" method="post" style="padding:8px 0;">
           <div class="form-row">
             <div>
-              <label>低点</label>
+              <label>Low</label>
               <input name="low" type="number" step="0.01" value="{{ z.low }}" required>
             </div>
             <div>
-              <label>高点</label>
+              <label>High</label>
               <input name="high" type="number" step="0.01" value="{{ z.high }}" required>
             </div>
             <div>
-              <label>强度</label>
+              <label>Strength</label>
               <select name="strength">
                 <option value="strong" {% if z.strength == 'strong' %}selected{% endif %}>strong</option>
                 <option value="medium" {% if z.strength == 'medium' %}selected{% endif %}>medium</option>
@@ -82,12 +82,12 @@
               </select>
             </div>
             <div style="grid-column: span 2;">
-              <label>备注</label>
+              <label>Note</label>
               <input name="note" type="text" value="{{ z.note }}">
             </div>
           </div>
-          <button class="btn btn-primary btn-sm" type="submit">保存</button>
-          <button class="btn btn-ghost btn-sm" type="button" onclick="toggleEdit({{ z.id }})">取消</button>
+          <button class="btn btn-primary btn-sm" type="submit">Save</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="toggleEdit({{ z.id }})">Cancel</button>
         </form>
       </td>
     </tr>
@@ -96,24 +96,24 @@
 </table>
 </div>
 {% else %}
-  <p class="muted" style="margin-bottom:20px;">还没有区间，添加第一个 ↓</p>
+  <p class="muted" style="margin-bottom:20px;">No zones yet. Add your first one below.</p>
 {% endif %}
 
 <!-- ── Add zone form ──────────────────────────────────────────────────── -->
-<h2 style="margin-top:28px;">添加新区间</h2>
+<h2 style="margin-top:28px;">Add Zone</h2>
 <div class="card">
   <form action="/stock/{{ symbol }}/zone/add" method="post">
     <div class="form-row">
       <div>
-        <label>低点</label>
+        <label>Low</label>
         <input name="low" type="number" step="0.01" placeholder="e.g. 315" required>
       </div>
       <div>
-        <label>高点</label>
+        <label>High</label>
         <input name="high" type="number" step="0.01" placeholder="e.g. 330" required>
       </div>
       <div>
-        <label>强度</label>
+        <label>Strength</label>
         <select name="strength">
           <option value="strong">strong</option>
           <option value="medium" selected>medium</option>
@@ -121,11 +121,11 @@
         </select>
       </div>
       <div style="grid-column: span 2;">
-        <label>备注（可选）</label>
-        <input name="note" type="text" placeholder="e.g. 长线支撑，Fibonacci 61.8%">
+        <label>Note (optional)</label>
+        <input name="note" type="text" placeholder="e.g. Long-term support, Fibonacci 61.8%">
       </div>
     </div>
-    <button class="btn btn-primary" type="submit">添加</button>
+    <button class="btn btn-primary" type="submit">Add</button>
   </form>
 </div>
 

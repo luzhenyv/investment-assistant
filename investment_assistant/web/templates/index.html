@@ -22,12 +22,12 @@
 <table>
   <thead>
     <tr>
-      <th>股票</th>
-      <th>最新收盘</th>
-      <th>区间数</th>
-      <th>支撑区</th>
-      <th>压力区</th>
-      <th>操作</th>
+      <th>Symbol</th>
+      <th>Last Close</th>
+      <th>Zone Count</th>
+      <th>Support Zones</th>
+      <th>Resistance Zones</th>
+      <th>Actions</th>
     </tr>
   </thead>
   <tbody>
@@ -44,13 +44,6 @@
       </td>
       <td>{{ s.zone_count }}</td>
       <td>
-        {% for z in s.zones if price and z.low <= price %}
-          <span class="badge badge-{{ 'strong' if z.strength == 'strong' else ('mid' if z.strength == 'medium' else 'weak') }}">
-            {{ z.low }}–{{ z.high }}
-          </span>
-        {% endfor %}
-      </td>
-      <td>
         {% for z in s.zones if price and z.high < price %}
           <span class="badge badge-{{ 'strong' if z.strength == 'strong' else ('mid' if z.strength == 'medium' else 'weak') }}">
             {{ z.low }}–{{ z.high }}
@@ -58,9 +51,16 @@
         {% endfor %}
       </td>
       <td>
-        <a href="/stock/{{ s.symbol }}" class="btn btn-ghost btn-sm">管理</a>
-        <form class="inline" action="/watchlist/remove/{{ s.symbol }}" method="post" onsubmit="return confirm('确认从观察列表移除 {{ s.symbol }}?')">
-          <button type="submit" class="btn btn-danger btn-sm">移除</button>
+        {% for z in s.zones if price and z.low > price %}
+          <span class="badge badge-{{ 'strong' if z.strength == 'strong' else ('mid' if z.strength == 'medium' else 'weak') }}">
+            {{ z.low }}–{{ z.high }}
+          </span>
+        {% endfor %}
+      </td>
+      <td>
+        <a href="/stock/{{ s.symbol }}" class="btn btn-ghost btn-sm">Manage</a>
+        <form class="inline" action="/watchlist/remove/{{ s.symbol }}" method="post" onsubmit="return confirm('Remove {{ s.symbol }} from watchlist?')">
+          <button type="submit" class="btn btn-danger btn-sm">Remove</button>
         </form>
       </td>
     </tr>

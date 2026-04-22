@@ -9,12 +9,22 @@ from investment_assistant.infra.time import utc_now
 from investment_assistant.database import get_session, Zone
 
 
+_STRENGTH_VALUES = {"strong", "medium", "weak"}
+
+
+def _normalize_strength(strength: str) -> str:
+    key = (strength or "").strip().lower()
+    if key not in _STRENGTH_VALUES:
+        raise ValueError(f"Invalid strength: {strength}")
+    return key
+
+
 # ── Write ─────────────────────────────────────────────────────────────────────
 
 def add_zone(symbol: str, low: float, high: float,
              strength: str, note: str = "") -> int:
     """Insert a new zone. Returns the new zone id."""
-    assert strength in ("strong", "medium", "weak"), f"Invalid strength: {strength}"
+    normalized_strength = _normalize_strength(strength)
     assert low < high, "low must be less than high"
     
     with get_session() as session:
@@ -22,7 +32,7 @@ def add_zone(symbol: str, low: float, high: float,
             symbol=symbol.upper(),
             low=low,
             high=high,
-            strength=strength,
+            strength=normalized_strength,
             note=note,
             is_active=1,
         )
@@ -48,6 +58,8 @@ def update_zone(zone_id: int, **kwargs) -> Zone:
             raise ValueError(f"Zone {zone_id} not found")
         
         for key, val in updates.items():
+            if key == "strength":
+                val = _normalize_strength(val)
             setattr(zone, key, val)
         zone.updated_at = utc_now()
     

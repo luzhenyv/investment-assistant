@@ -15,13 +15,13 @@ from investment_assistant.config import SETTINGS
 
 
 def _macro_snapshot() -> str:
-    lines = ["📊 *宏观市场*"]
+    lines = ["📊 *Macro Market*"]
     labels = {
         "SPX":  "S&P 500",
         "VIX":  "VIX",
-        "DXY":  "美元指数",
-        "OIL":  "原油",
-        "GOLD": "黄金",
+        "DXY":  "US Dollar Index",
+        "OIL":  "Crude Oil",
+        "GOLD": "Gold",
     }
     for key, ticker in SETTINGS.macro_symbols.items():
         price = get_latest_close(ticker)
@@ -80,23 +80,23 @@ def build_digest() -> tuple[str, list[Alert]]:
 
     # ── Build message ────────────────────────────────────────────────────────
     lines = [
-        f"📅 *每日复盘 · {today}*",
+        f"📅 *Daily Review · {today}*",
         "",
         _macro_snapshot(),
         "",
     ]
 
     if triggered:
-        lines.append("🎯 *触及区间*")
+        lines.append("🎯 *Touched Zones*")
         for a in triggered:
             note = f" — {a.zone['note']}" if a.zone.get("note") else ""
-            flip = "  ⚠️ 建议确认是否翻转" if a.flip_suggested else ""
+            flip = "  ⚠️ Flip review suggested" if a.flip_suggested else ""
             lines.append(
                 f"  {a.direction_emoji} *{a.symbol}*  ${a.price:.2f}  "
-                f"触及 {a.zone_label}{note}{flip}"
+                f"touched {a.zone_label}{note}{flip}"
             )
     else:
-        lines.append("✅ 今日无股票触及支撑/压力区")
+        lines.append("✅ No symbols touched support/resistance zones today")
 
     lines += ["", "─────────────────────"]
 
@@ -105,11 +105,11 @@ def build_digest() -> tuple[str, list[Alert]]:
 
 def build_single_alert_message(alert: Alert) -> str:
     """Format a single alert for immediate Telegram delivery."""
-    note = f"\n备注: {alert.zone['note']}" if alert.zone.get("note") else ""
-    flip = "\n⚠️ 建议确认是否翻转" if alert.flip_suggested else ""
+    note = f"\nNote: {alert.zone['note']}" if alert.zone.get("note") else ""
+    flip = "\n⚠️ Flip review suggested" if alert.flip_suggested else ""
     return (
         f"{alert.direction_emoji} *{alert.symbol}*\n"
-        f"{alert.trigger_type.capitalize()} 价格: ${alert.price:.2f}\n"
-        f"区间: {alert.zone_label}{note}{flip}"
+        f"{alert.trigger_type.capitalize()} price: ${alert.price:.2f}\n"
+        f"Zone: {alert.zone_label}{note}{flip}"
     )
 
