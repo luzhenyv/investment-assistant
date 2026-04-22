@@ -8,6 +8,7 @@ Run:  uvicorn investment_assistant.web.app:app --reload
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from contextlib import asynccontextmanager
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -18,6 +19,11 @@ from investment_assistant.infra.log import setup_logging, get_logger
 from investment_assistant.core.zones import (
     add_zone, update_zone, deactivate_zone, flip_zone,
     get_zones, get_zone_by_id, get_all_active_zones,
+)
+from investment_assistant.core.watchlist import (
+    add_watchlist_symbol,
+    get_watchlist_symbols,
+    remove_watchlist_symbol,
 )
 from investment_assistant.services.prices import get_latest_close
 
@@ -36,14 +42,20 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Investment Assistant Web", lifespan=lifespan)
 
 
+def _redirect_to_index(message: str, level: str = "info") -> RedirectResponse:
+    query = urlencode({"msg": message, "level": level})
+    return RedirectResponse(url=f"/?{query}", status_code=303)
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/")
 def index(request: Request):
     """Watchlist overview: each stock + its current price + zone count."""
     all_zones = get_all_active_zones()
+    symbols = get_watchlist_symbols(active_only=True)
     watchlist_data = []
-    for symbol in SETTINGS.watchlist:
+    for symbol in symbols:
         zones = all_zones.get(symbol, [])
         price = get_latest_close(symbol)
         watchlist_data.append({
@@ -55,8 +67,40 @@ def index(request: Request):
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"watchlist": watchlist_data},
+        {
+            "watchlist": watchlist_data,
+            "msg": request.query_params.get("msg", ""),
+            "level": request.query_params.get("level", "info"),
+        },
     )
+
+
+@app.post("/watchlist/add")
+def watchlist_add(symbol: str = Form(...)):
+    try:
+        result = add_watchlist_symbol(symbol)
+    except ValueError as exc:
+        return _redirect_to_index(str(exc), level="error")
+
+    status = result["status"]
+    canonical = result["canonical_symbol"]
+    if status == "added":
+        return _redirect_to_index(f"Added {canonical} to watchlist.", level="success")
+    if status == "reactivated":
+        return _redirect_to_index(f"Reactivated {canonical} in watchlist.", level="success")
+    return _redirect_to_index(f"{canonical} is already in watchlist.", level="info")
+
+
+@app.post("/watchlist/remove/{symbol}")
+def watchlist_remove(symbol: str):
+    try:
+        removed = remove_watchlist_symbol(symbol)
+    except ValueError as exc:
+        return _redirect_to_index(str(exc), level="error")
+
+    if not removed:
+        return _redirect_to_index(f"{symbol.upper()} is not in watchlist.", level="info")
+    return _redirect_to_index(f"Removed {symbol.upper()} from watchlist.", level="success")
 
 
 @app.get("/stock/{symbol}")

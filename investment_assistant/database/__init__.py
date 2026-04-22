@@ -6,7 +6,7 @@ This package replaces the older single-file core.database module.
 from investment_assistant.database.base import Base
 from investment_assistant.database.init_db import init_db
 from investment_assistant.database.legacy import get_conn
-from investment_assistant.database.models import Alert, Journal, OHLCV, Zone
+from investment_assistant.database.models import Alert, Journal, OHLCV, WatchlistAlias, WatchlistItem, Zone
 from investment_assistant.database.session import SessionLocal, engine, get_session
 
 __all__ = [
@@ -18,6 +18,8 @@ __all__ = [
     "Zone",
     "Alert",
     "Journal",
+    "WatchlistItem",
+    "WatchlistAlias",
     "init_db",
     "get_conn",
 ]

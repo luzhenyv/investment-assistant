@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from investment_assistant.database import init_db
 from investment_assistant.services.prices import sync_all, get_feed
+from investment_assistant.core.watchlist import get_watchlist_symbols, resolve_symbol_for_source
 from investment_assistant.core.digest import build_digest
 from investment_assistant.infra.log import setup_logging, get_logger
 from investment_assistant.notify.telegram_bot import send_digest
@@ -41,7 +42,12 @@ def run() -> None:
     init_db()
 
     # 1. Sync prices
-    all_symbols = SETTINGS.watchlist + list(SETTINGS.macro_symbols.values())
+    watchlist_symbols = get_watchlist_symbols(active_only=True)
+    mapped_watchlist_symbols = [
+        (sym, resolve_symbol_for_source(sym, "yfinance"))
+        for sym in watchlist_symbols
+    ]
+    all_symbols = mapped_watchlist_symbols + list(SETTINGS.macro_symbols.values())
     feed = get_feed()
     log.info("Syncing %d symbols...", len(all_symbols))
     sync_all(all_symbols, feed)

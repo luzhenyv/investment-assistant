@@ -61,6 +61,16 @@ class YahooFeed(PriceFeed):
         }
 
 
+def probe_yfinance_symbol(symbol: str) -> bool:
+    """Return True when yfinance can fetch non-empty recent history for a symbol."""
+    try:
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="1mo", interval="1d", auto_adjust=True)
+        return not df.empty
+    except Exception:
+        return False
+
+
 # ── OHLCV cache helpers (feed-agnostic) ───────────────────────────────────────
 
 def get_feed() -> PriceFeed:
@@ -118,7 +128,7 @@ def _upsert_ohlcv(symbol: str, df: pd.DataFrame) -> int:
     return written
 
 
-def sync_symbol(symbol: str, feed: Optional[PriceFeed] = None) -> int:
+def sync_symbol(symbol: str, feed: Optional[PriceFeed] = None, fetch_symbol: Optional[str] = None) -> int:
     """
     Incremental sync for one symbol.
     - First run: pulls OHLCV_HISTORY_YEARS of history.
@@ -127,6 +137,8 @@ def sync_symbol(symbol: str, feed: Optional[PriceFeed] = None) -> int:
     """
     if feed is None:
         feed = get_feed()
+
+    source_symbol = fetch_symbol or symbol
 
     last = _last_stored_date(symbol)
     if last is None:
@@ -138,20 +150,27 @@ def sync_symbol(symbol: str, feed: Optional[PriceFeed] = None) -> int:
     if start > end:
         return 0   # already up to date
 
-    df = feed.fetch_history(symbol, start, end)
+    df = feed.fetch_history(source_symbol, start, end)
     written = _upsert_ohlcv(symbol, df)
     if written:
-        print(f"[feed] {symbol}: +{written} rows (up to {end})")
+        if source_symbol == symbol:
+            print(f"[feed] {symbol}: +{written} rows (up to {end})")
+        else:
+            print(f"[feed] {symbol} <= {source_symbol}: +{written} rows (up to {end})")
     return written
 
 
-def sync_all(symbols: list[str], feed: Optional[PriceFeed] = None) -> None:
-    """Sync a list of symbols (watchlist + macro) using one feed instance."""
+def sync_all(symbols: list[str] | list[tuple[str, str]], feed: Optional[PriceFeed] = None) -> None:
+    """Sync canonical symbols with optional source-symbol mappings."""
     if feed is None:
         feed = get_feed()
-    for sym in symbols:
+    for entry in symbols:
+        if isinstance(entry, tuple):
+            sym, source_sym = entry
+        else:
+            sym, source_sym = entry, None
         try:
-            sync_symbol(sym, feed)
+            sync_symbol(sym, feed, fetch_symbol=source_sym)
         except Exception as exc:
             print(f"[feed] ERROR {sym}: {exc}")
 

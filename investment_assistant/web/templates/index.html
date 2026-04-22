@@ -3,6 +3,22 @@
 {% block content %}
 <h1>Watchlist</h1>
 
+{% if msg %}
+  <div class="card flash {{ level }}">{{ msg }}</div>
+{% endif %}
+
+<div class="card" style="margin-bottom: 16px;">
+  <form action="/watchlist/add" method="post" class="form-row" style="align-items: end; margin-bottom: 0;">
+    <div>
+      <label for="symbol">Add symbol</label>
+      <input id="symbol" name="symbol" type="text" placeholder="e.g. LLY or BRK.B" required>
+    </div>
+    <div style="max-width: 180px;">
+      <button type="submit" class="btn btn-primary">Add to Watchlist</button>
+    </div>
+  </form>
+</div>
+
 <table>
   <thead>
     <tr>
@@ -11,7 +27,7 @@
       <th>区间数</th>
       <th>支撑区</th>
       <th>压力区</th>
-      <th></th>
+      <th>操作</th>
     </tr>
   </thead>
   <tbody>
@@ -41,7 +57,12 @@
           </span>
         {% endfor %}
       </td>
-      <td><a href="/stock/{{ s.symbol }}" class="btn btn-ghost btn-sm">管理</a></td>
+      <td>
+        <a href="/stock/{{ s.symbol }}" class="btn btn-ghost btn-sm">管理</a>
+        <form class="inline" action="/watchlist/remove/{{ s.symbol }}" method="post" onsubmit="return confirm('确认从观察列表移除 {{ s.symbol }}?')">
+          <button type="submit" class="btn btn-danger btn-sm">移除</button>
+        </form>
+      </td>
     </tr>
   {% endfor %}
   </tbody>

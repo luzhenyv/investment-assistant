@@ -9,6 +9,7 @@ from investment_assistant.infra.time import utc_today, format_local
 from investment_assistant.services.prices import get_latest_close, get_latest_open
 from investment_assistant.core.zones import get_all_active_zones
 from investment_assistant.core.alerts import run_alert_check, Alert
+from investment_assistant.core.watchlist import get_watchlist_symbols
 from investment_assistant.database import get_session, Alert as AlertModel
 from investment_assistant.config import SETTINGS
 
@@ -62,7 +63,7 @@ def build_digest() -> tuple[str, list[Alert]]:
     all_zones = get_all_active_zones()
     triggered: list[Alert] = []
 
-    for symbol in SETTINGS.watchlist:
+    for symbol in get_watchlist_symbols(active_only=True):
         zones = all_zones.get(symbol, [])
         if not zones:
             continue

@@ -3,7 +3,14 @@ from investment_assistant.database.base import Base
 from investment_assistant.database.session import engine, database_url
 
 # Ensure all model modules are imported so metadata has all tables.
-from investment_assistant.database.models import Alert, Journal, OHLCV, Zone  # noqa: F401
+from investment_assistant.database.models import (  # noqa: F401
+    Alert,
+    Journal,
+    OHLCV,
+    WatchlistAlias,
+    WatchlistItem,
+    Zone,
+)
 
 
 def init_db() -> None:
