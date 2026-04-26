@@ -1,0 +1,17 @@
+[Unit]
+Description=Investment Assistant Web UI
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/investment-assistant
+EnvironmentFile=/opt/investment-assistant/.env
+ExecStart=/usr/local/bin/uv run --project /opt/investment-assistant uvicorn investment_assistant.web.app:app --host ${WEB_HOST} --port ${WEB_PORT}
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

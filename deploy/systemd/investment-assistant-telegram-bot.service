@@ -1,0 +1,17 @@
+[Unit]
+Description=Investment Assistant Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/investment-assistant
+EnvironmentFile=/opt/investment-assistant/.env
+ExecStart=/usr/local/bin/uv run --project /opt/investment-assistant python -m investment_assistant.notify.telegram_bot
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -238,4 +238,9 @@ def api_price(symbol: str):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("investment_assistant.web.app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "investment_assistant.web.app:app",
+        host=SETTINGS.web_host,
+        port=SETTINGS.web_port,
+        reload=SETTINGS.web_reload,
+    )

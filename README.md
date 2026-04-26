@@ -63,6 +63,9 @@ OHLCV_HISTORY_YEARS=5
 FLIP_THRESHOLD_PCT=2.0
 DISPLAY_TIMEZONE=America/New_York
 MARKET_SESSION=US
+WEB_HOST=0.0.0.0
+WEB_PORT=8000
+WEB_RELOAD=false
 DB_PATH=data/trading.db
 ```
 
@@ -75,7 +78,7 @@ uv run python investment_assistant/setup.py
 ### 5. Run web dashboard
 
 ```bash
-uv run uvicorn investment_assistant.web.app:app --reload
+uv run uvicorn investment_assistant.web.app:app --host 0.0.0.0 --port 8000
 # open http://localhost:8000
 ```
 
@@ -103,6 +106,12 @@ The daily job entrypoint is:
 uv run python investment_assistant/scheduler/daily_job.py
 ```
 
+The market-open kickoff job entrypoint is:
+
+```bash
+uv run python investment_assistant/scheduler/open_job.py
+```
+
 Integrate it with your system scheduler (cron, launchd, etc.) at your desired market-close time.
 
 To find the next market close in UTC (handles DST automatically):
@@ -110,6 +119,40 @@ To find the next market close in UTC (handles DST automatically):
 ```bash
 uv run python -c "from investment_assistant.scheduler.daily_job import next_run_utc; print(next_run_utc())"
 ```
+
+## Server Deployment
+
+For a Tailscale-only deployment, run the web UI on `0.0.0.0:8000` and access it through the server's Tailscale IP from another device on your tailnet.
+
+Example components to run on the server:
+
+- Web UI: `uv run uvicorn investment_assistant.web.app:app --host 0.0.0.0 --port 8000`
+- Telegram bot: `uv run python investment_assistant/notify/telegram_bot.py`
+- Market open: `uv run python investment_assistant/scheduler/open_job.py`
+- Market close: `uv run python investment_assistant/scheduler/daily_job.py`
+
+Example `systemd` units and timers are included under `deploy/systemd/`:
+
+- `investment-assistant-web.service`
+- `investment-assistant-telegram-bot.service`
+- `investment-assistant-market-open.service`
+- `investment-assistant-market-open.timer`
+- `investment-assistant-market-close.service`
+- `investment-assistant-market-close.timer`
+
+Suggested installation flow on the server:
+
+```bash
+sudo cp deploy/systemd/investment-assistant-*.service /etc/systemd/system/
+sudo cp deploy/systemd/investment-assistant-*.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now investment-assistant-web.service
+sudo systemctl enable --now investment-assistant-telegram-bot.service
+sudo systemctl enable --now investment-assistant-market-open.timer
+sudo systemctl enable --now investment-assistant-market-close.timer
+```
+
+Adjust `WorkingDirectory` and `EnvironmentFile` in those unit files if your server path is not `/opt/investment-assistant`.
 
 ## Time Management
 
@@ -157,6 +200,7 @@ investment_assistant/
       stock.html
   scheduler/
     daily_job.py
+    open_job.py
 data/
   trading.db              # auto-created
 ```

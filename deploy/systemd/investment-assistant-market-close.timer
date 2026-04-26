@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Investment Assistant market-close job on US weekdays
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 16:00:00 America/New_York
+Persistent=true
+Unit=investment-assistant-market-close.service
+
+[Install]
+WantedBy=timers.target

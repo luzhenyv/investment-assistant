@@ -1,0 +1,12 @@
+[Unit]
+Description=Investment Assistant US market-close digest job
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/investment-assistant
+EnvironmentFile=/opt/investment-assistant/.env
+ExecStart=/usr/local/bin/uv run --project /opt/investment-assistant python -m investment_assistant.scheduler.daily_job
+StandardOutput=journal
+StandardError=journal

@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     log_dir: Path = ROOT_DIR / "logs"
     db_path: Path | None = None
     log_level: str = "INFO"
+    web_host: str = "0.0.0.0"
+    web_port: int = 8000
+    web_reload: bool = False
 
     price_feed_backend: str = "investment_assistant.services.prices.YahooFeed"
     ohlcv_history_years: int = 5
