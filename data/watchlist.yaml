@@ -1,0 +1,11 @@
+# Investment universe to scan each week. Holdings are scanned automatically too;
+# list extra names here that you don't yet own but want surfaced as candidates.
+symbols:
+  - MSFT
+  - NVDA
+  - GOOG
+  - META
+  - AMZN
+  - AVGO
+  - TSM
+  - HOOD

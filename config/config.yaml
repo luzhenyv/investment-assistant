@@ -1,0 +1,32 @@
+# Tunable parameters for the weekly decision engine.
+# These are codified judgment, not validated thresholds — adjust as you learn.
+
+drift_band: 0.20          # allow +/-20% drift from target_weight before Trim/Add fires
+cash_band:
+  min: 0.10               # below this, suppress all new buys this week
+  max: 0.25               # above this, prompt to deploy capital
+
+scoring:
+  rsi_overbought: 70      # >= this counts as "extended" (income heuristic)
+  rsi_oversold: 40
+  pullback_atr_mult: 0.5  # price within this many ATRs of MA50 => "pullback"
+
+# Per-symbol target weight of total portfolio value. Symbols not listed default to 0.
+target_weights:
+  MSFT: 0.10
+  NVDA: 0.10
+  GOOG: 0.08
+  META: 0.08
+  AMZN: 0.08
+  AVGO: 0.06
+  TSM:  0.06
+  HOOD: 0.04
+
+# Intent -> suggested option structure(s). A hint for the human; the engine does NOT pick strikes.
+intent_strategy_map:
+  "Add Core":          ["Buy shares", "Cash Secured Put"]
+  "Trim":              ["Sell shares", "Covered Call"]
+  "Generate Income":   ["Covered Call", "Cash Secured Put"]
+  "Hedge":             ["Bear Put Spread"]
+  "Increase Exposure": ["Bull Call Spread"]
+  "Hold":              []
