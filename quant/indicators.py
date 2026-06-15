@@ -1,38 +1,44 @@
-"""Pure technical-indicator functions. Each takes a price DataFrame/Series and
-returns a scalar (the latest value). No I/O, no global state."""
+"""Pure technical-indicator functions. Each takes a Polars price column/Series and
+returns a scalar (the latest value). No I/O, no global state.
+
+Latest-value semantics let the same functions serve the live weekly run and the
+backtester: the backtester slices a frame up to week T, then calls these — the
+"latest" value is then the value as-of T."""
 from __future__ import annotations
 
-import pandas as pd
+import polars as pl
 
 
-def moving_average(close: pd.Series, window: int) -> float:
-    return float(close.rolling(window).mean().iloc[-1])
+def moving_average(close: pl.Series, window: int) -> float:
+    return float(close.tail(window).mean())
 
 
-def rsi(close: pd.Series, period: int = 14) -> float:
+def rsi(close: pl.Series, period: int = 14) -> float:
     diff = close.diff()
-    gain = diff.clip(lower=0)
-    loss = -diff.clip(upper=0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / avg_loss.replace(0, pd.NA)
-    value = 100 - 100 / (1 + rs)
-    # When avg_loss is 0 (only gains), RSI is 100.
-    return float(value.fillna(100).iloc[-1])
+    avg_gain = diff.clip(lower_bound=0).tail(period).mean()
+    avg_loss = (-diff).clip(lower_bound=0).tail(period).mean()
+    # Only gains over the window -> RSI is 100.
+    if not avg_loss:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return float(100 - 100 / (1 + rs))
 
 
-def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> float:
+def atr(high: pl.Series, low: pl.Series, close: pl.Series, period: int = 14) -> float:
     prev_close = close.shift(1)
-    true_range = pd.concat(
-        [high - low, (high - prev_close).abs(), (low - prev_close).abs()],
-        axis=1,
-    ).max(axis=1)
-    return float(true_range.rolling(period).mean().iloc[-1])
+    true_range = pl.DataFrame(
+        [
+            (high - low).rename("hl"),
+            (high - prev_close).abs().rename("hc"),
+            (low - prev_close).abs().rename("lc"),
+        ]
+    ).max_horizontal()
+    return float(true_range.tail(period).mean())
 
 
-def high_52w(high: pd.Series) -> float:
+def high_52w(high: pl.Series) -> float:
     return float(high.tail(252).max())
 
 
-def low_52w(low: pd.Series) -> float:
+def low_52w(low: pl.Series) -> float:
     return float(low.tail(252).min())

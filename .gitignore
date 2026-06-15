@@ -6,3 +6,6 @@ __pycache__/
 
 # Generated reports
 output/
+
+# Cached market data
+data/cache/

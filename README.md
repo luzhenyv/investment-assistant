@@ -9,14 +9,16 @@ beat the market. Its value is **discipline and time saved**: the same rules appl
 unemotionally every week, so buy/sell/hedge calls stop being driven by gut feeling.
 
 > **Honest framing.** The thresholds in `config/config.yaml` are *codified judgment*, not
-> statistically validated edges. v0.1 makes your process consistent and repeatable — it does
-> not prove the rules make money. A backtest (future version) is what would justify trusting
-> them. The design (score-based features + JSON output) is built so a backtest can be added
-> without a rewrite.
+> statistically validated edges. The decision engine makes your process consistent and
+> repeatable — it does not prove the rules make money. `backtest.py` now replays the rules
+> weekly over history as a sanity check, but it is an approximate equity simulation (intents
+> map coarsely to trades; options overlays are no-ops), not a P&L promise.
 
 ## What it does (v0.1)
 
-- Pulls free OHLCV data via `yfinance` for your holdings, watchlist, and SPY/QQQ/VIX.
+- Pulls free OHLCV data via `yfinance`, caches it as Parquet (`data/cache/`), and processes
+  it with Polars: `Yahoo Finance → Parquet → Polars → Signal → Portfolio → Backtester`.
+  Cached data is reused within the day and as a fallback when a download fails.
 - Computes a market **regime** (Panic → Strong Bull) and per-symbol **scores** (trend, momentum).
 - Compares each holding's weight to its target and applies a small **rule table** to produce an
   **intent**: Add Core / Trim / Hold / Generate Income / Hedge.
@@ -31,6 +33,7 @@ each intent, but **you pick the strikes and expiries.** No options-chain data is
 ```bash
 uv sync                       # install dependencies
 uv run weekly_review.py       # generate this week's report
+uv run backtest.py            # replay the rules over history (equity curve + stats)
 uv run pytest                 # run the test suite
 ```
 
@@ -43,5 +46,5 @@ uv run pytest                 # run the test suite
 
 ## Not in v0.1 (by design)
 
-Options-chain / strike selection · IV Rank · AI-written analysis · backtesting ·
+Options-chain / strike selection · IV Rank · AI-written analysis ·
 broker integration / auto-trading · ML parameter tuning.

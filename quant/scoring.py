@@ -1,7 +1,7 @@
 """Turn raw indicators into 0-100 scores and boolean flags. Pure functions."""
 from __future__ import annotations
 
-import pandas as pd
+import polars as pl
 
 from quant import indicators
 from quant.models import Signal
@@ -41,10 +41,14 @@ def is_breakout(price: float, high_52w: float) -> bool:
     return price >= high_52w
 
 
-def build_signal(symbol: str, df: pd.DataFrame, cfg: dict) -> Signal:
-    """Assemble a full Signal from an OHLC DataFrame using indicators + scores."""
+def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
+    """Assemble a full Signal from an OHLC DataFrame using indicators + scores.
+
+    `df` is a Polars frame sorted by date with Open/High/Low/Close columns; the
+    indicators read the latest (last-row) value, so slicing `df` to week T turns
+    this into an as-of-T snapshot for the backtester."""
     close, high, low = df["Close"], df["High"], df["Low"]
-    price = float(close.iloc[-1])
+    price = float(close.tail(1).item())
     ma20 = indicators.moving_average(close, 20)
     ma50 = indicators.moving_average(close, 50)
     ma200 = indicators.moving_average(close, 200)
