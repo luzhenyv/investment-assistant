@@ -1,6 +1,11 @@
 # Tunable parameters for the weekly decision engine.
 # These are codified judgment, not validated thresholds — adjust as you learn.
 
+data:
+  period: "2y"            # yfinance history window to fetch (and cache)
+  min_rows: 200           # min usable rows per symbol; fewer => symbol skipped
+                          # (need >= 200 + 252 trading days for MA200 + 52w window)
+
 drift_band: 0.20          # allow +/-20% drift from target_weight before Trim/Add fires
 cash_band:
   min: 0.10               # below this, suppress all new buys this week

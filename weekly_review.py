@@ -31,8 +31,11 @@ def main() -> None:
     symbols = sorted(set(watch) | set(holdings))
     print(f"Fetching data for {len(symbols)} symbols + SPY/QQQ/VIX ...")
 
-    history = providers.fetch_history(symbols + ["SPY", "QQQ"])
-    vix = providers.fetch_vix()
+    data_cfg = cfg["data"]
+    history = providers.fetch_history(
+        symbols + ["SPY", "QQQ"], data_cfg["period"], data_cfg["min_rows"]
+    )
+    vix = providers.fetch_vix(data_cfg["period"])
 
     signals = {
         sym: scoring.build_signal(sym, df, cfg)

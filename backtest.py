@@ -30,9 +30,10 @@ def main() -> None:
     _, holdings = portfolio.load_portfolio(PORTFOLIO)
 
     symbols = sorted(set(watch) | set(holdings) | {"SPY", "QQQ"})
+    data_cfg = cfg["data"]
     print(f"Fetching history for {len(symbols)} symbols + VIX ...")
-    history = providers.fetch_history(symbols)
-    vix_hist = providers.fetch_vix_history()
+    history = providers.fetch_history(symbols, data_cfg["period"], data_cfg["min_rows"])
+    vix_hist = providers.fetch_vix_history(data_cfg["period"])
 
     result = backtest.run(history, vix_hist, cfg)
 

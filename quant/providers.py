@@ -10,10 +10,6 @@ import yfinance as yf
 
 from quant import cache
 
-# Need >= 200 + 252 trading days for MA200 + 52w window; 2y is a safe margin.
-_PERIOD = "2y"
-_MIN_ROWS = 200
-
 
 def _to_polars(pdf, columns: list[str]) -> pl.DataFrame:
     """yfinance pandas frame -> Polars frame with a tz-free `date` column."""
@@ -41,12 +37,16 @@ def _download_vix(period: str) -> pl.DataFrame | None:
     return _to_polars(pdf, ["Close"])
 
 
-def fetch_history(symbols: list[str], period: str = _PERIOD) -> dict[str, pl.DataFrame]:
-    """Return {symbol: OHLC Polars frame}. Symbols with no usable data are skipped."""
+def fetch_history(
+    symbols: list[str], period: str, min_rows: int
+) -> dict[str, pl.DataFrame]:
+    """Return {symbol: OHLC Polars frame}. Symbols with no usable data are skipped.
+
+    `period` and `min_rows` come from the `data` section of config.yaml."""
     out: dict[str, pl.DataFrame] = {}
     for sym in symbols:
         df = cache.load_or_fetch(
-            sym, lambda s=sym: _download_history(s, period), min_rows=_MIN_ROWS
+            sym, lambda s=sym: _download_history(s, period), min_rows=min_rows
         )
         if df is None:
             print(f"  ! skipping {sym}: insufficient data")
@@ -55,12 +55,12 @@ def fetch_history(symbols: list[str], period: str = _PERIOD) -> dict[str, pl.Dat
     return out
 
 
-def fetch_vix_history(period: str = _PERIOD) -> pl.DataFrame | None:
+def fetch_vix_history(period: str) -> pl.DataFrame | None:
     """Full VIX close history (cached) — used by the backtester for as-of lookups."""
     return cache.load_or_fetch("VIX", lambda: _download_vix(period), min_rows=1)
 
 
-def fetch_vix(period: str = _PERIOD) -> float:
+def fetch_vix(period: str) -> float:
     """Latest VIX close. Falls back to 20 (neutral) if unavailable."""
     df = fetch_vix_history(period)
     if df is None:
