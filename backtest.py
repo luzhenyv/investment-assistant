@@ -10,7 +10,7 @@ import os
 
 import yaml
 
-from quant import backtest, portfolio, providers
+from quant import backtest, plotting, portfolio, providers
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(ROOT, "config", "config.yaml")
@@ -66,6 +66,10 @@ def main() -> None:
             indent=2,
         )
     print(f"\nEquity curve written to {out}")
+
+    fig_out = os.path.join(OUT_DIR, "backtest_report.html")
+    plotting.write_equity_figure(result, fig_out)
+    print(f"Figure written to {fig_out}")
 
 
 if __name__ == "__main__":

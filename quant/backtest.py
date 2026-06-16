@@ -36,6 +36,8 @@ class BacktestResult:
     cagr: float = 0.0
     max_drawdown: float = 0.0
     spy_return: float = 0.0
+    spy_prices: list[float] = field(default_factory=list)
+    composition: list[dict[str, float]] = field(default_factory=list)
 
 
 def _as_of(df: pl.DataFrame, t: date) -> pl.DataFrame:
@@ -123,6 +125,7 @@ def run(
     out_dates: list[str] = []
     equity_curve: list[float] = []
     spy_prices: list[float] = []
+    composition: list[dict[str, float]] = []
 
     for t in rebal_dates:
         spy_sub, qqq_sub = _as_of(spy, t), _as_of(qqq, t)
@@ -179,10 +182,14 @@ def run(
         equity_curve.append(equity)
         spy_prices.append(prices.get("SPY", spy_prices[-1] if spy_prices else 0.0))
 
-    return _summarize(out_dates, equity_curve, spy_prices, initial_cash)
+        comp = {s: shares[s] * prices[s] for s in shares if shares[s] > 0 and s in prices}
+        comp["Cash"] = cash
+        composition.append(comp)
+
+    return _summarize(out_dates, equity_curve, spy_prices, composition, initial_cash)
 
 
-def _summarize(dates, equity, spy_prices, initial_cash) -> BacktestResult:
+def _summarize(dates, equity, spy_prices, composition, initial_cash) -> BacktestResult:
     if not equity:
         raise SystemExit("Backtest produced no points — not enough history after warmup.")
 
@@ -208,4 +215,6 @@ def _summarize(dates, equity, spy_prices, initial_cash) -> BacktestResult:
         cagr=cagr,
         max_drawdown=max_dd,
         spy_return=spy_return,
+        spy_prices=spy_prices,
+        composition=composition,
     )
