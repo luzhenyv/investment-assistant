@@ -30,3 +30,34 @@ def test_pullback_within_band():
 def test_breakout():
     assert scoring.is_breakout(price=100, high_52w=100)
     assert not scoring.is_breakout(price=99, high_52w=100)
+
+
+# asset_state(price, ma200, trend, rsi, pullback, breakout, accel_rsi)
+def test_asset_state_broken_below_ma200():
+    assert scoring.asset_state(95, 100, 100, 60, False, False, 62) == "Broken"
+
+
+def test_asset_state_broken_when_trend_collapsed():
+    # above MA200 but trend stack gone
+    assert scoring.asset_state(105, 100, 25, 60, False, False, 62) == "Broken"
+
+
+def test_asset_state_mean_reversion_takes_pullback():
+    assert scoring.asset_state(105, 100, 100, 50, True, False, 62) == "Mean Reversion"
+
+
+def test_asset_state_acceleration_on_breakout():
+    assert scoring.asset_state(120, 100, 100, 55, False, True, 62) == "Trend Acceleration"
+
+
+def test_asset_state_acceleration_on_hot_rsi():
+    assert scoring.asset_state(110, 100, 75, 65, False, False, 62) == "Trend Acceleration"
+
+
+def test_asset_state_mature_when_strong_but_not_hot():
+    # strong stack, no breakout, RSI below accel threshold
+    assert scoring.asset_state(110, 100, 75, 55, False, False, 62) == "Trend Mature"
+
+
+def test_asset_state_range_is_default():
+    assert scoring.asset_state(105, 100, 50, 55, False, False, 62) == "Range"

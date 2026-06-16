@@ -41,6 +41,31 @@ def is_breakout(price: float, high_52w: float) -> bool:
     return price >= high_52w
 
 
+def asset_state(
+    price: float,
+    ma200: float,
+    trend: float,
+    rsi: float,
+    pullback: bool,
+    breakout: bool,
+    accel_rsi: float,
+) -> str:
+    """Classify a symbol into one discrete state for strategy routing.
+
+    First-match ladder, derived only from already-computed fields. The state lets
+    momentum and mean-reversion rules coexist by never applying to the same symbol
+    in the same week."""
+    if price < ma200 or trend <= 25:
+        return "Broken"                # lost the long-term trend
+    if pullback:
+        return "Mean Reversion"        # intact stack, dipping to MA50 -> buy weakness
+    if trend >= 75 and (breakout or rsi >= accel_rsi):
+        return "Trend Acceleration"    # strong + new high / hot -> add to strength
+    if trend >= 75:
+        return "Trend Mature"          # strong stack but not accelerating
+    return "Range"
+
+
 def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
     """Assemble a full Signal from an OHLC DataFrame using indicators + scores.
 
@@ -57,6 +82,10 @@ def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
     hi = indicators.high_52w(high)
     lo = indicators.low_52w(low)
     atr_mult = cfg["scoring"]["pullback_atr_mult"]
+    accel_rsi = cfg["scoring"].get("accel_rsi", 62)
+    trend = trend_score(price, ma20, ma50, ma200)
+    pullback = is_pullback(price, ma50, atr_val, atr_mult)
+    breakout = is_breakout(price, hi)
     return Signal(
         symbol=symbol,
         price=price,
@@ -67,8 +96,9 @@ def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
         atr=atr_val,
         high_52w=hi,
         low_52w=lo,
-        trend_score=trend_score(price, ma20, ma50, ma200),
+        trend_score=trend,
         momentum_score=momentum_score(rsi_val),
-        pullback=is_pullback(price, ma50, atr_val, atr_mult),
-        breakout=is_breakout(price, hi),
+        pullback=pullback,
+        breakout=breakout,
+        state=asset_state(price, ma200, trend, rsi_val, pullback, breakout, accel_rsi),
     )

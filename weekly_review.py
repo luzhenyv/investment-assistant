@@ -53,7 +53,6 @@ def main() -> None:
     weights = portfolio.current_weights(holdings, prices, total_value)
     cash_state = portfolio.cash_status(cash, total_value, cfg["cash_band"])
     cash_low = cash_state == "low"
-    targets = cfg.get("target_weights", {})
 
     holding_recs = []
     for sym, h in sorted(holdings.items()):
@@ -65,14 +64,18 @@ def main() -> None:
                 holding=h,
                 market=mkt,
                 current_weight=weights.get(sym, 0.0),
-                target_weight=targets.get(sym, 0.0),
+                target_weight=decision.effective_target(sym, cfg),
                 total_value=total_value,
                 cfg=cfg,
                 cash_low=cash_low,
             )
         )
 
-    watchlist_recs = decision.scan_watchlist(signals, set(holdings), mkt)
+    max_positions = cfg.get("lifecycle", {}).get("max_positions", 7)
+    open_slots = max(0, max_positions - len(holdings))
+    watchlist_recs = decision.scan_watchlist(
+        signals, set(holdings), mkt, cfg, open_slots
+    )
     decision.attach_strategy_hints(holding_recs, cfg["intent_strategy_map"])
     decision.attach_strategy_hints(watchlist_recs, cfg["intent_strategy_map"])
 

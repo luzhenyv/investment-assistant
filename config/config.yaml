@@ -15,6 +15,14 @@ scoring:
   rsi_overbought: 70      # >= this counts as "extended" (income heuristic)
   rsi_oversold: 40
   pullback_atr_mult: 0.5  # price within this many ATRs of MA50 => "pullback"
+  accel_rsi: 62           # trend>=75 + (breakout or RSI>=this) => Trend Acceleration
+
+# Watchlist→holdings lifecycle + state-aware sizing.
+lifecycle:
+  accel_mult: 1.5         # Trim ceiling = target*(1+drift)*this when Trend Acceleration
+  max_positions: 7        # hold at most this many names (out of the wider watchlist)
+  entry_trend_min: 75     # min trend score to open a new watchlist position
+  entry_default_weight: 0.05  # slot weight for an entered name with no hand-set target
 
 # Per-symbol target weight of total portfolio value. Symbols not listed default to 0.
 target_weights:
@@ -34,4 +42,5 @@ intent_strategy_map:
   "Generate Income":   ["Covered Call", "Cash Secured Put"]
   "Hedge":             ["Bear Put Spread"]
   "Increase Exposure": ["Bull Call Spread"]
+  "Close":             ["Sell shares"]
   "Hold":              []
