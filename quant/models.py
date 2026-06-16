@@ -27,6 +27,8 @@ class Signal:
     momentum_score: float
     pullback: bool
     breakout: bool
+    state: str = "Range"   # asset state machine label (see scoring.asset_state)
+    rs: float = 0.0        # relative strength: trailing return over rs_lookback
 
 
 @dataclass
@@ -44,7 +46,7 @@ class Holding:
 @dataclass
 class Recommendation:
     symbol: str
-    intent: str          # Add Core | Trim | Hold | Generate Income | Hedge | Increase Exposure
+    intent: str          # Add Core | Trim | Hold | Generate Income | Hedge | Increase Exposure | Close
     reason: str
     scores: dict = field(default_factory=dict)
     strategy_hint: list[str] = field(default_factory=list)

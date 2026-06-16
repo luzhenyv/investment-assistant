@@ -7,6 +7,7 @@ Approximations — this engine produces discretionary *intents*, not sized order
 so the simulation is deliberately coarse:
   * Add Core / Increase Exposure  -> buy toward the configured target weight.
   * Trim                          -> sell down to the target weight.
+  * Close                         -> sell the whole position to zero.
   * Hedge / Generate Income / Hold-> options overlays, no equity effect here.
 Trades fill at the week's close with no commissions or slippage, and a cash
 floor (cash_band.min) is kept. Treat results as a sanity check on the rules, not
@@ -61,23 +62,36 @@ def _holdings(shares: dict[str, float]) -> dict[str, Holding]:
     }
 
 
-def _execute(recs, shares, prices, total_value, targets, cash, cash_band) -> float:
+def _execute(recs, shares, prices, total_value, cfg, cash, cash_band) -> float:
     """Apply each recommendation as a move toward its target weight. Returns cash."""
     floor = cash_band.get("min", 0.0) * total_value
     for r in recs:
         price = prices.get(r.symbol)
-        tw = targets.get(r.symbol, 0.0)
-        if not price or tw <= 0:
+        if not price:
+            continue
+        if r.intent == "Close":
+            qty = shares.get(r.symbol, 0.0)
+            if qty > 0:
+                cash += qty * price
+                shares[r.symbol] = 0.0
+            continue
+        tw = decision.effective_target(r.symbol, cfg)
+        if tw <= 0:
             continue
         target_val = tw * total_value
         cur_val = shares.get(r.symbol, 0.0) * price
         if r.intent in ("Add Core", "Increase Exposure"):
-            buy = min(target_val - cur_val, max(0.0, cash - floor))
+            # Honor the rec's own sizing when set (acceleration pyramids toward the
+            # raised ceiling, above the base target); else fall back to base target.
+            want = r.dollar_gap if r.dollar_gap is not None else (target_val - cur_val)
+            buy = min(want, max(0.0, cash - floor))
             if buy > 0:
                 shares[r.symbol] = shares.get(r.symbol, 0.0) + buy / price
                 cash -= buy
         elif r.intent == "Trim":
-            sell = cur_val - target_val
+            # Honor the rec's own sizing when set (rotation trims one step); else
+            # sell down to the base target. dollar_gap is signed (negative to trim).
+            sell = -r.dollar_gap if r.dollar_gap is not None else (cur_val - target_val)
             if sell > 0:
                 qty = min(shares.get(r.symbol, 0.0), sell / price)
                 shares[r.symbol] -= qty
@@ -97,8 +111,12 @@ def run(
         raise SystemExit("Backtest needs SPY and QQQ history.")
 
     rebal_dates = spy["date"].to_list()[WARMUP::STEP]
-    targets = cfg.get("target_weights", {})
+    start = cfg.get("backtest", {}).get("start")
+    if start:
+        start_date = date.fromisoformat(start)
+        rebal_dates = [d for d in rebal_dates if d >= start_date]
     cash_band = cfg["cash_band"]
+    max_positions = cfg.get("lifecycle", {}).get("max_positions", 7)
 
     cash = initial_cash
     shares: dict[str, float] = {}
@@ -129,23 +147,32 @@ def run(
         qqq_sig = scoring.build_signal("QQQ", qqq_sub, cfg)
         mkt = market.detect_market(spy_sig, qqq_sig, _vix_as_of(vix_hist, t))
 
+        held = {sym for sym, qty in shares.items() if qty > 0}
         recs = [
             decision.decide_holding(
                 sig=signals[sym],
-                holding=Holding(symbol=sym, core=qty, trading=0.0, avg_cost=0.0),
+                holding=Holding(symbol=sym, core=shares[sym], trading=0.0, avg_cost=0.0),
                 market=mkt,
                 current_weight=weights.get(sym, 0.0),
-                target_weight=targets.get(sym, 0.0),
+                target_weight=decision.effective_target(sym, cfg),
                 total_value=total_value,
                 cfg=cfg,
                 cash_low=cash_low,
             )
-            for sym, qty in shares.items()
-            if qty > 0 and sym in signals
+            for sym in held
+            if sym in signals
         ]
-        recs += decision.scan_watchlist(signals, set(shares), mkt)
+        if cash_low:
+            recs += decision.rotation(
+                signals, held, weights, mkt, cfg, total_value, cash_low
+            )
+        else:
+            open_slots = max(0, max_positions - len(held))
+            recs += decision.scan_watchlist(
+                signals, held, mkt, cfg, open_slots, total_value
+            )
 
-        cash = _execute(recs, shares, prices, total_value, targets, cash, cash_band)
+        cash = _execute(recs, shares, prices, total_value, cfg, cash, cash_band)
 
         equity = portfolio.portfolio_value(cash, _holdings(shares), prices)
         out_dates.append(t.isoformat())

@@ -3,6 +3,7 @@ import datetime as dt
 import polars as pl
 
 from quant import backtest
+from quant.models import Recommendation
 
 CFG = {
     "drift_band": 0.20,
@@ -38,3 +39,42 @@ def test_run_produces_equity_curve_and_buys_in_bull():
     # Rising market -> SPY buy-hold is positive and capital gets deployed.
     assert result.spy_return > 0
     assert result.final_value > result.initial_value
+
+
+def test_close_sells_to_zero():
+    shares = {"MSFT": 100.0}
+    prices = {"MSFT": 50.0}
+    recs = [Recommendation(symbol="MSFT", intent="Close", reason="")]
+    cash = backtest._execute(
+        recs, shares, prices, total_value=10_000.0,
+        cfg=CFG, cash=1_000.0, cash_band={"min": 0.10},
+    )
+    assert shares["MSFT"] == 0.0
+    assert cash == 1_000.0 + 100 * 50
+
+
+def test_trim_honors_dollar_gap_step():
+    # Rotation trims one step: _execute should sell exactly the dollar_gap, not to target.
+    shares = {"LAG": 100.0}  # $5,000 position at $50
+    prices = {"LAG": 50.0}
+    recs = [Recommendation(symbol="LAG", intent="Trim", reason="", dollar_gap=-1_000.0)]
+    cash = backtest._execute(
+        recs, shares, prices, total_value=100_000.0,
+        cfg=CFG, cash=0.0, cash_band={"min": 0.0},
+    )
+    assert abs(shares["LAG"] - 80.0) < 1e-9   # sold $1,000 = 20 shares
+    assert abs(cash - 1_000.0) < 1e-9
+
+
+def test_entry_buys_symbol_without_target():
+    # A watchlist-only name (no target_weight) is bought toward the default slot.
+    shares: dict[str, float] = {}
+    prices = {"ABC": 50.0}
+    recs = [Recommendation(symbol="ABC", intent="Increase Exposure", reason="")]
+    cash = backtest._execute(
+        recs, shares, prices, total_value=100_000.0,
+        cfg={"lifecycle": {"entry_default_weight": 0.05}},
+        cash=100_000.0, cash_band={"min": 0.10},
+    )
+    assert shares["ABC"] * 50.0 == 5_000.0   # 5% of 100k
+    assert cash == 95_000.0
