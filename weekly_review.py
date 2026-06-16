@@ -71,11 +71,17 @@ def main() -> None:
             )
         )
 
-    max_positions = cfg.get("lifecycle", {}).get("max_positions", 7)
-    open_slots = max(0, max_positions - len(holdings))
-    watchlist_recs = decision.scan_watchlist(
-        signals, set(holdings), mkt, cfg, open_slots
-    )
+    if cash_low:
+        # At the cash floor: rotate out a laggard to fund the strongest candidate.
+        watchlist_recs = decision.rotation(
+            signals, set(holdings), weights, mkt, cfg, total_value, cash_low
+        )
+    else:
+        max_positions = cfg.get("lifecycle", {}).get("max_positions", 7)
+        open_slots = max(0, max_positions - len(holdings))
+        watchlist_recs = decision.scan_watchlist(
+            signals, set(holdings), mkt, cfg, open_slots, total_value
+        )
     decision.attach_strategy_hints(holding_recs, cfg["intent_strategy_map"])
     decision.attach_strategy_hints(watchlist_recs, cfg["intent_strategy_map"])
 

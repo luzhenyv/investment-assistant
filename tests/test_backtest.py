@@ -53,6 +53,19 @@ def test_close_sells_to_zero():
     assert cash == 1_000.0 + 100 * 50
 
 
+def test_trim_honors_dollar_gap_step():
+    # Rotation trims one step: _execute should sell exactly the dollar_gap, not to target.
+    shares = {"LAG": 100.0}  # $5,000 position at $50
+    prices = {"LAG": 50.0}
+    recs = [Recommendation(symbol="LAG", intent="Trim", reason="", dollar_gap=-1_000.0)]
+    cash = backtest._execute(
+        recs, shares, prices, total_value=100_000.0,
+        cfg=CFG, cash=0.0, cash_band={"min": 0.0},
+    )
+    assert abs(shares["LAG"] - 80.0) < 1e-9   # sold $1,000 = 20 shares
+    assert abs(cash - 1_000.0) < 1e-9
+
+
 def test_entry_buys_symbol_without_target():
     # A watchlist-only name (no target_weight) is bought toward the default slot.
     shares: dict[str, float] = {}

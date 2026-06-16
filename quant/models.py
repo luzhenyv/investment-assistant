@@ -28,6 +28,7 @@ class Signal:
     pullback: bool
     breakout: bool
     state: str = "Range"   # asset state machine label (see scoring.asset_state)
+    rs: float = 0.0        # relative strength: trailing return over rs_lookback
 
 
 @dataclass

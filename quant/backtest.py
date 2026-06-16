@@ -89,7 +89,9 @@ def _execute(recs, shares, prices, total_value, cfg, cash, cash_band) -> float:
                 shares[r.symbol] = shares.get(r.symbol, 0.0) + buy / price
                 cash -= buy
         elif r.intent == "Trim":
-            sell = cur_val - target_val
+            # Honor the rec's own sizing when set (rotation trims one step); else
+            # sell down to the base target. dollar_gap is signed (negative to trim).
+            sell = -r.dollar_gap if r.dollar_gap is not None else (cur_val - target_val)
             if sell > 0:
                 qty = min(shares.get(r.symbol, 0.0), sell / price)
                 shares[r.symbol] -= qty
@@ -109,6 +111,10 @@ def run(
         raise SystemExit("Backtest needs SPY and QQQ history.")
 
     rebal_dates = spy["date"].to_list()[WARMUP::STEP]
+    start = cfg.get("backtest", {}).get("start")
+    if start:
+        start_date = date.fromisoformat(start)
+        rebal_dates = [d for d in rebal_dates if d >= start_date]
     cash_band = cfg["cash_band"]
     max_positions = cfg.get("lifecycle", {}).get("max_positions", 7)
 
@@ -156,8 +162,15 @@ def run(
             for sym in held
             if sym in signals
         ]
-        open_slots = max(0, max_positions - len(held))
-        recs += decision.scan_watchlist(signals, held, mkt, cfg, open_slots)
+        if cash_low:
+            recs += decision.rotation(
+                signals, held, weights, mkt, cfg, total_value, cash_low
+            )
+        else:
+            open_slots = max(0, max_positions - len(held))
+            recs += decision.scan_watchlist(
+                signals, held, mkt, cfg, open_slots, total_value
+            )
 
         cash = _execute(recs, shares, prices, total_value, cfg, cash, cash_band)
 

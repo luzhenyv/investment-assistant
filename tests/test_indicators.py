@@ -32,3 +32,14 @@ def test_52w_window():
     low = pl.Series(list(range(300)))
     assert indicators.high_52w(high) == 299
     assert indicators.low_52w(low) == 48  # 300-252
+
+
+def test_trailing_return():
+    # 100 -> 110 over a 5-bar lookback = +10%
+    s = pl.Series([100.0, 102, 104, 106, 108, 110])
+    assert abs(indicators.trailing_return(s, 5) - 0.10) < 1e-9
+
+
+def test_trailing_return_insufficient_history_is_zero():
+    s = pl.Series([100.0, 110.0])
+    assert indicators.trailing_return(s, 5) == 0.0

@@ -8,12 +8,12 @@ CFG = {
 
 
 def sig(symbol="X", price=100, ma50=100, ma200=90, rsi=55, pullback=False, breakout=False,
-        trend=100, momentum=60, state="Range"):
+        trend=100, momentum=60, state="Range", rs=0.0):
     return Signal(
         symbol=symbol, price=price, ma20=price, ma50=ma50, ma200=ma200, rsi=rsi,
         atr=5, high_52w=price, low_52w=price * 0.5,
         trend_score=trend, momentum_score=momentum, pullback=pullback, breakout=breakout,
-        state=state,
+        state=state, rs=rs,
     )
 
 
@@ -80,12 +80,12 @@ def test_trim_when_accelerating_above_ceiling():
     assert r.intent == "Trim"
 
 
-def test_pyramid_add_targets_ceiling():
-    # dollar_gap should reach toward the 18% ceiling, not the 10% base target.
+def test_pyramid_add_is_one_step():
+    # Staged: add one step (target/max_steps = 0.10/3), not the full gap to ceiling.
     r = decide(sig(state="Trend Acceleration"), hold(core=10), BULL, cw=0.10, tw=0.10,
                total=100000)
     assert r.intent == "Add Core"
-    assert r.dollar_gap == (0.18 - 0.10) * 100000
+    assert abs(r.dollar_gap - (0.10 / 3) * 100000) < 1e-6
 
 
 def test_no_pyramid_when_cash_low():
@@ -115,37 +115,105 @@ def test_hold_is_default():
     assert r.intent == "Hold"
 
 
+def scan(signals, held, mkt, slots, total=100000):
+    return decision.scan_watchlist(signals, held, mkt, CFG, slots, total)
+
+
 def test_scan_watchlist_skips_weak_regimes():
     signals = {"AAA": sig(symbol="AAA", state="Trend Acceleration", trend=100)}
-    assert decision.scan_watchlist(signals, set(), CORRECTION, CFG, open_slots=5) == []
-    out = decision.scan_watchlist(signals, set(), NEUTRAL, CFG, open_slots=5)
+    assert scan(signals, set(), CORRECTION, 5) == []
+    out = scan(signals, set(), NEUTRAL, 5)
     assert len(out) == 1 and out[0].intent == "Increase Exposure"
+
+
+def test_scan_watchlist_admits_trend_mature():
+    signals = {"AAA": sig(symbol="AAA", state="Trend Mature", trend=80, rs=0.3)}
+    out = scan(signals, set(), BULL, 5)
+    assert len(out) == 1 and out[0].symbol == "AAA"
 
 
 def test_scan_watchlist_excludes_held():
     signals = {"AAA": sig(symbol="AAA", state="Trend Acceleration")}
-    assert decision.scan_watchlist(signals, {"AAA"}, BULL, CFG, open_slots=5) == []
+    assert scan(signals, {"AAA"}, BULL, 5) == []
 
 
-def test_scan_watchlist_respects_open_slots():
+def test_scan_watchlist_ranks_by_relative_strength():
+    # Weaker state but higher RS should outrank a strong state with lower RS.
     signals = {
-        "AAA": sig(symbol="AAA", state="Trend Acceleration", trend=100, momentum=80),
-        "BBB": sig(symbol="BBB", state="Trend Acceleration", trend=100, momentum=60),
-        "CCC": sig(symbol="CCC", state="Mean Reversion", trend=90, momentum=40),
+        "AAA": sig(symbol="AAA", state="Trend Acceleration", trend=100, rs=0.10),
+        "BBB": sig(symbol="BBB", state="Trend Mature", trend=80, rs=0.50),
+        "CCC": sig(symbol="CCC", state="Mean Reversion", trend=90, rs=0.30),
     }
-    out = decision.scan_watchlist(signals, set(), BULL, CFG, open_slots=2)
-    assert [r.symbol for r in out] == ["AAA", "BBB"]  # ranked, capped at slots
+    out = scan(signals, set(), BULL, 2)
+    assert [r.symbol for r in out] == ["BBB", "CCC"]  # ranked by rs, capped at slots
+
+
+def test_scan_watchlist_entry_is_one_step():
+    # Entry buys a first scale-in step (default slot 0.05 / max_steps 3 of 100k).
+    signals = {"AAA": sig(symbol="AAA", state="Trend Acceleration", trend=100, rs=0.2)}
+    out = scan(signals, set(), BULL, 5, total=100000)
+    assert abs(out[0].dollar_gap - (0.05 / 3) * 100000) < 1e-6
 
 
 def test_scan_watchlist_entry_threshold():
     # trend below entry_trend_min (75) is excluded even in an entry state.
     signals = {"AAA": sig(symbol="AAA", state="Mean Reversion", trend=50)}
-    assert decision.scan_watchlist(signals, set(), BULL, CFG, open_slots=5) == []
+    assert scan(signals, set(), BULL, 5) == []
 
 
 def test_scan_watchlist_zero_slots():
     signals = {"AAA": sig(symbol="AAA", state="Trend Acceleration", trend=100)}
-    assert decision.scan_watchlist(signals, set(), BULL, CFG, open_slots=0) == []
+    assert scan(signals, set(), BULL, 0) == []
+
+
+def rotate(signals, held, weights, mkt, cash_low=True, total=100000):
+    return decision.rotation(signals, held, weights, mkt, CFG, total, cash_low)
+
+
+def test_rotation_trims_laggard_to_fund_best():
+    signals = {
+        "WIN": sig(symbol="WIN", state="Trend Mature", trend=80, rs=0.50),
+        "LAG": sig(symbol="LAG", state="Trend Mature", trend=80, rs=0.05),
+    }
+    out = rotate(signals, {"LAG"}, {"LAG": 0.10}, BULL)
+    assert [r.intent for r in out] == ["Trim", "Increase Exposure"]
+    assert out[0].symbol == "LAG" and out[0].dollar_gap < 0   # exit first
+    assert out[1].symbol == "WIN" and out[1].dollar_gap > 0
+
+
+def test_rotation_closes_deeply_weak_laggard():
+    signals = {
+        "WIN": sig(symbol="WIN", state="Trend Acceleration", trend=100, rs=0.40),
+        "LAG": sig(symbol="LAG", state="Range", trend=60, rs=-0.10),
+    }
+    out = rotate(signals, {"LAG"}, {"LAG": 0.08}, BULL)
+    assert out[0].intent == "Close" and out[0].symbol == "LAG"
+    assert out[0].dollar_gap == -0.08 * 100000
+
+
+def test_rotation_skips_when_margin_not_met():
+    signals = {
+        "WIN": sig(symbol="WIN", state="Trend Mature", trend=80, rs=0.12),
+        "LAG": sig(symbol="LAG", state="Trend Mature", trend=80, rs=0.08),
+    }
+    assert rotate(signals, {"LAG"}, {"LAG": 0.10}, BULL) == []  # 0.04 gap < 0.10 margin
+
+
+def test_rotation_never_sells_accelerating_winner():
+    signals = {
+        "WIN": sig(symbol="WIN", state="Trend Mature", trend=80, rs=0.50),
+        "HOT": sig(symbol="HOT", state="Trend Acceleration", trend=100, rs=0.05),
+    }
+    # the only held name is accelerating -> excluded from laggards -> no rotation
+    assert rotate(signals, {"HOT"}, {"HOT": 0.10}, BULL) == []
+
+
+def test_rotation_off_when_cash_not_low():
+    signals = {
+        "WIN": sig(symbol="WIN", state="Trend Mature", trend=80, rs=0.50),
+        "LAG": sig(symbol="LAG", state="Trend Mature", trend=80, rs=0.05),
+    }
+    assert rotate(signals, {"LAG"}, {"LAG": 0.10}, BULL, cash_low=False) == []
 
 
 def test_attach_strategy_hints():

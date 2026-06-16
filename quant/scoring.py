@@ -83,6 +83,7 @@ def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
     lo = indicators.low_52w(low)
     atr_mult = cfg["scoring"]["pullback_atr_mult"]
     accel_rsi = cfg["scoring"].get("accel_rsi", 62)
+    rs = indicators.trailing_return(close, cfg["scoring"].get("rs_lookback", 126))
     trend = trend_score(price, ma20, ma50, ma200)
     pullback = is_pullback(price, ma50, atr_val, atr_mult)
     breakout = is_breakout(price, hi)
@@ -101,4 +102,5 @@ def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
         pullback=pullback,
         breakout=breakout,
         state=asset_state(price, ma200, trend, rsi_val, pullback, breakout, accel_rsi),
+        rs=rs,
     )
