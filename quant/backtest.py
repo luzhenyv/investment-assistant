@@ -9,11 +9,21 @@ so the simulation is deliberately coarse:
   * Trim                          -> sell down to the target weight.
   * Close                         -> sell the whole position to zero.
   * Hedge / Generate Income / Hold-> options overlays, no equity effect here.
-Trades fill at the week's close with no commissions or slippage, and a cash
+Trades fill at the week's close. Transaction costs (per_trade_bps) and cash
+interest (cash_apy) are applied when configured under `backtest.costs`; a cash
 floor (cash_band.min) is kept. Treat results as a sanity check on the rules, not
-a P&L promise."""
+a P&L promise.
+
+Survivorship / selection-bias caveat: the traded universe is the hand-picked
+watchlist + current holdings, NOT a point-in-time, survivorship-free index. The
+names were chosen with hindsight, so historical results are optimistic and not
+repeatable on a fresh universe. Fixing this properly needs historical index
+membership, which yfinance does not provide. The train/test split (backtest.
+train_end) is a partial mitigation, not a cure for this bias."""
 from __future__ import annotations
 
+import math
+import statistics
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -24,6 +34,7 @@ from quant.models import Holding
 
 WARMUP = 200  # trading days needed before the first signal (MA200 window)
 STEP = 5      # rebalance cadence in trading days (~weekly)
+PERIODS_PER_YEAR = 52  # equity curve is sampled ~weekly; annualize Sharpe by this
 
 
 @dataclass
@@ -36,6 +47,10 @@ class BacktestResult:
     cagr: float = 0.0
     max_drawdown: float = 0.0
     spy_return: float = 0.0
+    sharpe: float = 0.0
+    max_dd_duration: int = 0           # longest peak->recovery run, in weeks
+    total_costs: float = 0.0           # cumulative transaction costs paid
+    segments: dict = field(default_factory=dict)  # in_sample / out_of_sample metrics
     spy_prices: list[float] = field(default_factory=list)
     composition: list[dict[str, float]] = field(default_factory=list)
 
@@ -64,8 +79,19 @@ def _holdings(shares: dict[str, float]) -> dict[str, Holding]:
     }
 
 
-def _execute(recs, shares, prices, total_value, cfg, cash, cash_band) -> float:
-    """Apply each recommendation as a move toward its target weight. Returns cash."""
+def _execute(recs, shares, prices, total_value, cfg, cash, cash_band, acc=None) -> float:
+    """Apply each recommendation as a move toward its target weight. Returns cash.
+
+    Charges `backtest.costs.per_trade_bps` on every buy/Trim/Close (0 when unset);
+    accumulates the charge into `acc["costs"]` when an accumulator dict is passed."""
+    rate = cfg.get("backtest", {}).get("costs", {}).get("per_trade_bps", 0.0) / 1e4
+
+    def charge(notional: float) -> float:
+        cost = notional * rate
+        if acc is not None:
+            acc["costs"] += cost
+        return cost
+
     floor = cash_band.get("min", 0.0) * total_value
     for r in recs:
         price = prices.get(r.symbol)
@@ -74,7 +100,8 @@ def _execute(recs, shares, prices, total_value, cfg, cash, cash_band) -> float:
         if r.intent == "Close":
             qty = shares.get(r.symbol, 0.0)
             if qty > 0:
-                cash += qty * price
+                proceeds = qty * price
+                cash += proceeds - charge(proceeds)
                 shares[r.symbol] = 0.0
             continue
         tw = decision.effective_target(r.symbol, cfg)
@@ -89,7 +116,7 @@ def _execute(recs, shares, prices, total_value, cfg, cash, cash_band) -> float:
             buy = min(want, max(0.0, cash - floor))
             if buy > 0:
                 shares[r.symbol] = shares.get(r.symbol, 0.0) + buy / price
-                cash -= buy
+                cash -= buy + charge(buy)
         elif r.intent == "Trim":
             # Honor the rec's own sizing when set (rotation trims one step); else
             # sell down to the base target. dollar_gap is signed (negative to trim).
@@ -97,7 +124,8 @@ def _execute(recs, shares, prices, total_value, cfg, cash, cash_band) -> float:
             if sell > 0:
                 qty = min(shares.get(r.symbol, 0.0), sell / price)
                 shares[r.symbol] -= qty
-                cash += qty * price
+                proceeds = qty * price
+                cash += proceeds - charge(proceeds)
     return cash
 
 
@@ -119,6 +147,7 @@ def run(
         rebal_dates = [d for d in rebal_dates if d >= start_date]
     cash_band = cfg["cash_band"]
     max_positions = cfg.get("lifecycle", {}).get("max_positions", 7)
+    cash_apy = cfg.get("backtest", {}).get("costs", {}).get("cash_apy", 0.0)
 
     cash = initial_cash
     shares: dict[str, float] = {}
@@ -126,11 +155,18 @@ def run(
     equity_curve: list[float] = []
     spy_prices: list[float] = []
     composition: list[dict[str, float]] = []
+    acc = {"costs": 0.0}
+    prev_date: date | None = None
 
     for t in rebal_dates:
         spy_sub, qqq_sub = _as_of(spy, t), _as_of(qqq, t)
         if spy_sub.height < WARMUP or qqq_sub.height < WARMUP:
             continue
+
+        # Accrue interest on idle cash over the days since the last rebalance.
+        if cash_apy and prev_date is not None:
+            cash *= (1 + cash_apy) ** ((t - prev_date).days / 365.25)
+        prev_date = t
 
         prices = {
             sym: p for sym, df in history.items() if (p := _price_as_of(df, t)) is not None
@@ -175,7 +211,7 @@ def run(
                 signals, held, mkt, cfg, open_slots, total_value
             )
 
-        cash = _execute(recs, shares, prices, total_value, cfg, cash, cash_band)
+        cash = _execute(recs, shares, prices, total_value, cfg, cash, cash_band, acc)
 
         equity = portfolio.portfolio_value(cash, _holdings(shares), prices)
         out_dates.append(t.isoformat())
@@ -186,12 +222,62 @@ def run(
         comp["Cash"] = cash
         composition.append(comp)
 
-    return _summarize(out_dates, equity_curve, spy_prices, composition, initial_cash)
+    return _summarize(
+        out_dates, equity_curve, spy_prices, composition, initial_cash,
+        total_costs=acc["costs"], cfg=cfg,
+    )
 
 
-def _summarize(dates, equity, spy_prices, composition, initial_cash) -> BacktestResult:
+def _max_dd_and_duration(equity) -> tuple[float, int]:
+    """Max drawdown (fraction) and longest peak->recovery run (in sample periods)."""
+    peak, max_dd, cur, longest = equity[0], 0.0, 0, 0
+    for v in equity:
+        if v >= peak:
+            peak, cur = v, 0
+        else:
+            cur += 1
+            longest = max(longest, cur)
+        max_dd = max(max_dd, (peak - v) / peak)
+    return max_dd, longest
+
+
+def _sharpe(equity, rf_pp: float) -> float:
+    """Annualized Sharpe from a return series; rf_pp is the per-period risk-free rate."""
+    rets = [equity[i] / equity[i - 1] - 1.0 for i in range(1, len(equity)) if equity[i - 1]]
+    if len(rets) < 2:
+        return 0.0
+    sd = statistics.pstdev(rets)
+    if sd == 0:
+        return 0.0
+    excess = statistics.mean([r - rf_pp for r in rets])
+    return math.sqrt(PERIODS_PER_YEAR) * excess / sd
+
+
+def _segment_metrics(dates, equity, rf_pp: float) -> dict:
+    """Return/CAGR/Sharpe/max-DD for one slice of the equity curve (segment-relative)."""
+    start_v, final = equity[0], equity[-1]
+    total_return = final / start_v - 1.0 if start_v else 0.0
+    years = (date.fromisoformat(dates[-1]) - date.fromisoformat(dates[0])).days / 365.25
+    cagr = (final / start_v) ** (1 / years) - 1.0 if years > 0 and start_v else 0.0
+    max_dd, duration = _max_dd_and_duration(equity)
+    return {
+        "start": dates[0],
+        "end": dates[-1],
+        "total_return": total_return,
+        "cagr": cagr,
+        "sharpe": _sharpe(equity, rf_pp),
+        "max_drawdown": max_dd,
+        "max_dd_duration": duration,
+    }
+
+
+def _summarize(dates, equity, spy_prices, composition, initial_cash,
+               total_costs=0.0, cfg=None) -> BacktestResult:
     if not equity:
         raise SystemExit("Backtest produced no points — not enough history after warmup.")
+
+    cfg = cfg or {}
+    rf_pp = cfg.get("backtest", {}).get("costs", {}).get("cash_apy", 0.0) / PERIODS_PER_YEAR
 
     final = equity[-1]
     total_return = final / initial_cash - 1.0
@@ -199,12 +285,21 @@ def _summarize(dates, equity, spy_prices, composition, initial_cash) -> Backtest
     years = (date.fromisoformat(dates[-1]) - date.fromisoformat(dates[0])).days / 365.25
     cagr = (final / initial_cash) ** (1 / years) - 1.0 if years > 0 else 0.0
 
-    peak, max_dd = equity[0], 0.0
-    for v in equity:
-        peak = max(peak, v)
-        max_dd = max(max_dd, (peak - v) / peak)
-
+    max_dd, max_dd_duration = _max_dd_and_duration(equity)
+    sharpe = _sharpe(equity, rf_pp)
     spy_return = spy_prices[-1] / spy_prices[0] - 1.0 if spy_prices and spy_prices[0] else 0.0
+
+    # Out-of-sample split: report the in-sample and out-of-sample segments separately.
+    segments: dict = {}
+    train_end = cfg.get("backtest", {}).get("train_end")
+    if train_end:
+        boundary = date.fromisoformat(train_end)
+        split = next((i for i, d in enumerate(dates) if date.fromisoformat(d) >= boundary), None)
+        if split is not None and split >= 2 and len(dates) - split >= 2:
+            segments = {
+                "in_sample": _segment_metrics(dates[:split], equity[:split], rf_pp),
+                "out_of_sample": _segment_metrics(dates[split:], equity[split:], rf_pp),
+            }
 
     return BacktestResult(
         dates=dates,
@@ -215,6 +310,10 @@ def _summarize(dates, equity, spy_prices, composition, initial_cash) -> Backtest
         cagr=cagr,
         max_drawdown=max_dd,
         spy_return=spy_return,
+        sharpe=sharpe,
+        max_dd_duration=max_dd_duration,
+        total_costs=total_costs,
+        segments=segments,
         spy_prices=spy_prices,
         composition=composition,
     )

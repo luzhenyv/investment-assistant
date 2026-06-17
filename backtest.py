@@ -43,7 +43,18 @@ def main() -> None:
     print(f"  Final:         ${result.final_value:,.0f}")
     print(f"  Total return:  {result.total_return:+.1%}   (SPY buy-hold {result.spy_return:+.1%})")
     print(f"  CAGR:          {result.cagr:+.1%}")
-    print(f"  Max drawdown:  {result.max_drawdown:.1%}")
+    print(f"  Sharpe:        {result.sharpe:.2f}   (excess of cash yield)")
+    print(f"  Max drawdown:  {result.max_drawdown:.1%}  (longest {result.max_dd_duration} weeks under water)")
+    print(f"  Txn costs:     ${result.total_costs:,.0f}")
+
+    if result.segments:
+        print("\n  Out-of-sample check (in-sample vs out-of-sample):")
+        for label, seg in result.segments.items():
+            print(
+                f"    {label:14s} {seg['start']}→{seg['end']}  "
+                f"return {seg['total_return']:+.1%}  CAGR {seg['cagr']:+.1%}  "
+                f"Sharpe {seg['sharpe']:.2f}  maxDD {seg['max_drawdown']:.1%}"
+            )
 
     os.makedirs(OUT_DIR, exist_ok=True)
     out = os.path.join(OUT_DIR, "backtest_report.json")
@@ -55,8 +66,12 @@ def main() -> None:
                     "final_value": result.final_value,
                     "total_return": result.total_return,
                     "cagr": result.cagr,
+                    "sharpe": result.sharpe,
                     "max_drawdown": result.max_drawdown,
+                    "max_dd_duration": result.max_dd_duration,
+                    "total_costs": result.total_costs,
                     "spy_return": result.spy_return,
+                    "segments": result.segments,
                 },
                 "equity_curve": [
                     {"date": d, "equity": e} for d, e in zip(result.dates, result.equity)

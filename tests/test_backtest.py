@@ -39,6 +39,22 @@ def test_run_produces_equity_curve_and_buys_in_bull():
     # Rising market -> SPY buy-hold is positive and capital gets deployed.
     assert result.spy_return > 0
     assert result.final_value > result.initial_value
+    # New metrics are populated; no costs configured -> zero.
+    assert isinstance(result.sharpe, float)
+    assert result.max_dd_duration >= 0
+    assert result.total_costs == 0.0
+
+
+def test_costs_and_oos_split():
+    history = {"SPY": _rising_frame(), "QQQ": _rising_frame(), "MSFT": _rising_frame()}
+    # Rebalance dates span ~Jul–Sep 2023; a mid-span train_end yields both segments.
+    cfg = {**CFG, "backtest": {"train_end": "2023-08-15",
+                               "costs": {"per_trade_bps": 5, "cash_apy": 0.04}}}
+    result = backtest.run(history, vix_hist=None, cfg=cfg, initial_cash=100_000.0)
+
+    assert result.total_costs > 0.0  # trades incurred transaction costs
+    assert set(result.segments) == {"in_sample", "out_of_sample"}
+    assert result.segments["in_sample"]["end"] < result.segments["out_of_sample"]["start"]
 
 
 def test_close_sells_to_zero():

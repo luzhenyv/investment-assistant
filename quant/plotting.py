@@ -86,7 +86,7 @@ def write_equity_figure(result: BacktestResult, out_path: str) -> None:
 
     title = (
         f"Backtest — total {result.total_return:+.0%} (SPY {result.spy_return:+.0%}), "
-        f"CAGR {result.cagr:+.1%}, max DD {result.max_drawdown:.1%}"
+        f"CAGR {result.cagr:+.1%}, Sharpe {result.sharpe:.2f}, max DD {result.max_drawdown:.1%}"
     )
     fig.update_layout(title=title, hovermode="x unified", height=900,
                       legend=dict(traceorder="normal"))

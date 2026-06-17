@@ -9,6 +9,10 @@ data:
 
 backtest:
   start: "2019-01-01"     # replay starts here; earlier data warms up the indicators
+  train_end: "2023-01-01" # in-sample ends here; later dates report as out-of-sample
+  costs:
+    per_trade_bps: 5      # commission+slippage charged per buy/sell (~5 bps large-cap, Chan)
+    cash_apy: 0.04        # annualized interest earned on idle cash
 
 drift_band: 0.20          # allow +/-20% drift from target_weight before Trim/Add fires
 cash_band:
