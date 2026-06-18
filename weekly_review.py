@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date
+from datetime import datetime
 
 import yaml
 
@@ -93,17 +93,21 @@ def main() -> None:
     }
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    generated_at = date.today().isoformat()
+    now = datetime.now()
+    generated_at = now.strftime("%Y-%m-%d %H:%M:%S")  # in-file header + JSON field
+    stamp = now.strftime("%Y-%m-%d_%H%M%S")           # filename suffix (sortable, no colons)
+    md_path = os.path.join(OUT_DIR, f"weekly_report_{stamp}.md")
+    json_path = os.path.join(OUT_DIR, f"weekly_report_{stamp}.json")
     report.generate(
-        os.path.join(OUT_DIR, "weekly_report.md"),
-        os.path.join(OUT_DIR, "weekly_report.json"),
+        md_path,
+        json_path,
         generated_at,
         mkt,
         holding_recs,
         watchlist_recs,
         summary,
     )
-    print(f"Report written to {OUT_DIR}/weekly_report.md")
+    print(f"Report written to {md_path}")
 
 
 if __name__ == "__main__":
