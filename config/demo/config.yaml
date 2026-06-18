@@ -28,23 +28,44 @@ scoring:
 
 # Watchlist→holdings lifecycle + state-aware sizing.
 lifecycle:
-  accel_mult: 1.5         # Trim ceiling = target*(1+drift)*this when Trend Acceleration
-  max_positions: 7        # hold at most this many names (out of the wider watchlist)
+  accel_extra_steps: 1    # Trend Acceleration may take this many extra scale-in steps
+                          # beyond target (ceiling = target*(1+extra/max_steps)); with
+                          # max_steps=3 one extra step lifts 15%->20%, 10%->13.3%, 6%->8%
+  max_positions: 7        # hold at most this many names (out of the wider watchlist).
+                          # With 15% big-tier targets + 10% cash floor this concentrates
+                          # in ~6 mega-caps; raise to ~10 to express the full tiered book
   entry_trend_min: 75     # min trend score to open a new watchlist position
   entry_default_weight: 0.05  # slot weight for an entered name with no hand-set target
-  max_steps: 3            # scale-in: reach target/ceiling over this many weekly adds
+  max_steps: 3            # scale-in: reach target over this many weekly adds (step=target/3)
   rotation_margin: 0.10   # cash-low rotation: candidate must beat laggard RS by this
 
 # Per-symbol target weight of total portfolio value. Symbols not listed default to 0.
+# Three conviction tiers — let bigger/better-fundamental names size larger:
+#   0.15  mega-cap leaders (step 5%, momentum ceiling 20%)
+#   0.10  mid/large growth (step 3.3%, momentum ceiling ~13.3%)
+#   0.06  small high-growth (step 2%, momentum ceiling 8%)
+# A target is a ceiling, not a floor — a name can sit at 5% if the adds don't trigger.
 target_weights:
-  MSFT: 0.10
-  NVDA: 0.10
-  GOOG: 0.08
-  META: 0.08
-  AMZN: 0.08
-  AVGO: 0.06
-  TSM:  0.06
-  HOOD: 0.04
+  # 0.15 — mega-cap, strong fundamentals
+  NVDA: 0.15
+  GOOG: 0.15
+  MSFT: 0.15
+  META: 0.15
+  AMZN: 0.15
+  AVGO: 0.15
+  # 0.10 — mid / large growth
+  AMD:  0.10
+  MU:   0.10
+  MRVL: 0.10
+  TSM:  0.10
+  PLTR: 0.10
+  HOOD: 0.10
+  # 0.06 — small, high-speed development (HIMS/RKLB/NBIS have short history — see watchlist note)
+  CRWD: 0.06
+  NET:  0.06
+  HIMS: 0.06
+  RKLB: 0.06
+  NBIS: 0.06
 
 # Intent -> suggested option structure(s). A hint for the human; the engine does NOT pick strikes.
 intent_strategy_map:

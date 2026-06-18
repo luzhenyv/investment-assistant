@@ -39,13 +39,22 @@ def effective_target(symbol: str, cfg: dict) -> float:
 
 def effective_ceiling(state: str, target_weight: float, cfg: dict) -> float:
     """Upper weight bound before Trim fires. State-aware: an accelerating winner is
-    allowed to run higher (accel_mult) before being rebalanced down; every other
-    state trims at the normal drift band. Only the *upper* band is state-aware —
-    the lower (Add) band stays target*(1-drift) so we still buy dips at the same
-    level."""
+    allowed to run higher before being rebalanced down; every other state trims at
+    the normal drift band. Only the *upper* band is state-aware — the lower (Add)
+    band stays target*(1-drift) so we still buy dips at the same level.
+
+    The accel ceiling lets a winner take one more scale-in step beyond target: with
+    `accel_extra_steps` set it is target*(1 + extra/max_steps) — e.g. one extra step
+    of target/3 raises a 15% target to 20%. Falls back to the legacy `accel_mult`
+    band (target*(1+drift)*accel_mult) when accel_extra_steps is not configured."""
     base = target_weight * (1 + cfg["drift_band"])
     if state == "Trend Acceleration":
-        return base * cfg.get("lifecycle", {}).get("accel_mult", 1.5)
+        life = cfg.get("lifecycle", {})
+        extra = life.get("accel_extra_steps")
+        if extra is not None:
+            max_steps = life.get("max_steps", 3)
+            return target_weight * (1 + extra / max_steps)
+        return base * life.get("accel_mult", 1.5)
     return base
 
 
