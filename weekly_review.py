@@ -9,13 +9,10 @@ from datetime import date
 
 import yaml
 
-from quant import decision, market, portfolio, providers, report, scoring
+from quant import decision, market, portfolio, profiles, providers, report, scoring
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-CONFIG = os.path.join(ROOT, "config", "config.yaml")
-PORTFOLIO = os.path.join(ROOT, "data", "portfolio.yaml")
-WATCHLIST = os.path.join(ROOT, "data", "watchlist.yaml")
-OUT_DIR = os.path.join(ROOT, "output")
+CONFIG, PORTFOLIO, WATCHLIST, OUT_DIR = profiles.resolve(ROOT)
 
 
 def _load_yaml(path: str) -> dict:

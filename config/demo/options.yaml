@@ -1,0 +1,3 @@
+# Option legs — for YOUR reference only. The engine does NOT read this file.
+# Records open option positions so each weekly commit captures the full picture.
+legs: []

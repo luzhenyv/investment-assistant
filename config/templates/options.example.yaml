@@ -1,0 +1,13 @@
+# Option legs — for YOUR reference only. The engine does NOT read this file.
+# It mirrors v0.1, where options are intent "hints"; this just records what you hold
+# so the weekly snapshot (a private-repo commit) captures your full position.
+legs:
+  - underlying: NVDA
+    type: covered_call     # covered_call | csp | long_call | long_put | spread...
+    action: short          # long | short
+    strike: 200
+    expiry: 2026-07-18
+    contracts: 1
+    premium: 4.50          # per-share credit (short) or debit (long)
+    opened: 2026-06-10
+    note: "income on core"

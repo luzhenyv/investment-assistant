@@ -2,8 +2,8 @@
 
 ## Before your next real weekend run
 
-- Update `data/portfolio.yaml` with your actual holdings.
-- Adjust `target_weights` in `config/config.yaml` to your intended allocation.
+- Update `config/demo/portfolio.yaml` with your actual holdings.
+- Adjust `target_weights` in `config/demo/config.yaml` to your intended allocation.
 
 ## Possible directions after that
 

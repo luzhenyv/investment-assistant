@@ -8,7 +8,7 @@ It is a **decision engine, not a prediction engine.** It does not forecast price
 beat the market. Its value is **discipline and time saved**: the same rules applied
 unemotionally every week, so buy/sell/hedge calls stop being driven by gut feeling.
 
-> **Honest framing.** The thresholds in `config/config.yaml` are *codified judgment*, not
+> **Honest framing.** The thresholds in `config/demo/config.yaml` are *codified judgment*, not
 > statistically validated edges. The decision engine makes your process consistent and
 > repeatable — it does not prove the rules make money. `backtest.py` now replays the rules
 > weekly over history as a sanity check, but it is an approximate equity simulation (intents
@@ -39,9 +39,9 @@ uv run pytest                 # run the test suite
 
 ## Configure
 
-- `data/portfolio.yaml` — your cash + holdings (update by hand each week).
-- `data/watchlist.yaml` — symbols to scan.
-- `config/config.yaml` — target weights, drift band, cash band, score thresholds,
+- `config/demo/portfolio.yaml` — your cash + holdings (update by hand each week).
+- `config/demo/watchlist.yaml` — symbols to scan.
+- `config/demo/config.yaml` — target weights, drift band, cash band, score thresholds,
   and the intent → option-strategy hint map.
 
 ## Not in v0.1 (by design)

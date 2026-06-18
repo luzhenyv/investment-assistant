@@ -9,3 +9,7 @@ output/
 
 # Cached market data
 data/cache/
+
+# Real money — lives in its own local-only git repo, never pushed to this remote.
+# See docs/REAL_PORTFOLIO_SETUP.md
+/private/

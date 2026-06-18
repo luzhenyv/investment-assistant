@@ -1,0 +1,6 @@
+# Watchlist template — copy into private/<profile>/watchlist.yaml.
+# Universe to scan each week. Holdings are scanned automatically too; list extra
+# names here that you don't yet own but want surfaced as entry candidates.
+symbols:
+  - MSFT
+  - NVDA

@@ -1,0 +1,10 @@
+# Portfolio template — copy into private/<profile>/portfolio.yaml and fill with real numbers.
+# Update by hand each week (no broker integration in v0.1).
+#   core    = long-term shares you don't intend to sell
+#   trading = tactical shares you may rotate
+#   avg_cost = average cost basis per share (informational only)
+cash: 0
+
+positions:
+  # SYMBOL: { core: <shares>, trading: <shares>, avg_cost: <price> }
+  MSFT: { core: 0, trading: 0, avg_cost: 0 }

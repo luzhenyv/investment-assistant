@@ -10,13 +10,10 @@ import os
 
 import yaml
 
-from quant import backtest, plotting, portfolio, providers
+from quant import backtest, plotting, portfolio, profiles, providers
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-CONFIG = os.path.join(ROOT, "config", "config.yaml")
-PORTFOLIO = os.path.join(ROOT, "data", "portfolio.yaml")
-WATCHLIST = os.path.join(ROOT, "data", "watchlist.yaml")
-OUT_DIR = os.path.join(ROOT, "output")
+CONFIG, PORTFOLIO, WATCHLIST, OUT_DIR = profiles.resolve(ROOT)
 
 
 def _load_yaml(path: str) -> dict:
