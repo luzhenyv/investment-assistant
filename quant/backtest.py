@@ -9,7 +9,9 @@ so the simulation is deliberately coarse:
   * Trim                          -> sell down to the target weight.
   * Close                         -> sell the whole position to zero.
   * Hedge / Generate Income / Hold-> options overlays, no equity effect here.
-Trades fill at the week's close. Transaction costs (per_trade_bps) and cash
+Decisions are computed as-of a week's close, but trades fill at the next trading
+day's open (the first session of the following week) — no same-bar execution.
+Transaction costs (per_trade_bps) and cash
 interest (cash_apy) are applied when configured under `backtest.costs`; a cash
 floor (cash_band.min) is kept. Treat results as a sanity check on the rules, not
 a P&L promise.
@@ -62,6 +64,12 @@ def _as_of(df: pl.DataFrame, t: date) -> pl.DataFrame:
 def _price_as_of(df: pl.DataFrame, t: date) -> float | None:
     sub = _as_of(df, t)
     return float(sub["Close"].tail(1).item()) if sub.height else None
+
+
+def _open_as_of(df: pl.DataFrame, t: date) -> float | None:
+    """Open of the first bar on/after t (the execution bar's open)."""
+    sub = df.filter(pl.col("date") >= t)
+    return float(sub["Open"].head(1).item()) if sub.height else None
 
 
 def _vix_as_of(vix: pl.DataFrame | None, t: date) -> float:
@@ -140,7 +148,9 @@ def run(
     if spy is None or qqq is None:
         raise SystemExit("Backtest needs SPY and QQQ history.")
 
-    rebal_dates = spy["date"].to_list()[WARMUP::STEP]
+    calendar = spy["date"].to_list()
+    cal_pos = {d: i for i, d in enumerate(calendar)}
+    rebal_dates = calendar[WARMUP::STEP]
     start = cfg.get("backtest", {}).get("start")
     if start:
         start_date = date.fromisoformat(start)
@@ -214,14 +224,24 @@ def run(
                 signals, held, mkt, cfg, open_slots, total_value
             )[:open_slots]
 
-        cash = _execute(recs, shares, prices, total_value, cfg, cash, cash_band, acc)
+        # Fill on the next trading day's open — decisions are sized as-of the
+        # close above, but orders can only execute at the following session.
+        nxt = cal_pos[t] + 1
+        if nxt >= len(calendar):
+            break  # final decision bar has no next day to fill on; stop
+        t_exec = calendar[nxt]
+        exec_prices = {
+            sym: p for sym, df in history.items() if (p := _open_as_of(df, t_exec)) is not None
+        }
 
-        equity = portfolio.portfolio_value(cash, _holdings(shares), prices)
-        out_dates.append(t.isoformat())
+        cash = _execute(recs, shares, exec_prices, total_value, cfg, cash, cash_band, acc)
+
+        equity = portfolio.portfolio_value(cash, _holdings(shares), exec_prices)
+        out_dates.append(t_exec.isoformat())
         equity_curve.append(equity)
-        spy_prices.append(prices.get("SPY", spy_prices[-1] if spy_prices else 0.0))
+        spy_prices.append(exec_prices.get("SPY", spy_prices[-1] if spy_prices else 0.0))
 
-        comp = {s: shares[s] * prices[s] for s in shares if shares[s] > 0 and s in prices}
+        comp = {s: shares[s] * exec_prices[s] for s in shares if shares[s] > 0 and s in exec_prices}
         comp["Cash"] = cash
         composition.append(comp)
 
