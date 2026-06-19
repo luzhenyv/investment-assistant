@@ -16,9 +16,14 @@ parameters, the traded universe, and the results/equity curve. Ask the user if o
 1. **Performance measures** — needs annualized **Sharpe** + **max drawdown** + **DD duration**;
    return/CAGR alone hide risk. If Sharpe missing, estimate from returns: `r_t = eq_t/eq_{t-1}-1`,
    `Sharpe ≈ sqrt(P)·mean(r)/std(r)` (P = 252 daily / 52 weekly / 12 monthly; match the cadence).
-2. **Look-ahead bias** — signals from as-of/lagged data only; fills never use a bar after the
-   signal bar; no full-sample fit then trade same sample. Recommend the truncation A/B test
-   (re-run on data cut by N≈10–100 days; overlapping positions must be identical).
+2. **Look-ahead bias** — signals from as-of/lagged data only; **the fill bar must be strictly
+   after the signal bar**. Top trap = *same-bar execution*: a signal read from bar t's close that
+   also fills at bar t's close — you can't trade the price that just triggered you. Rule: decide
+   as-of t's close → fill at t+1's open at the earliest. Check `execution_date > signal_date` for
+   every trade directly — the truncation A/B test below does NOT catch same-bar fills (overlap
+   positions stay identical). No full-sample fit then trade same sample. Also recommend the
+   truncation A/B test (re-run on data cut by N≈10–100 days; overlapping positions must be
+   identical) for future-data leakage.
 3. **Data-snooping / overfitting** — ≤ 5 free params (hand-set weights count too); is there an
    out-of-sample / train-test split? Bailey sample size: Sharpe ≈ 1 needs ~681 pts (~2.7 yr daily);
    true Sharpe ≥ 1 needs backtest Sharpe ≥ 1.5 over ~2,739 pts (~10.9 yr). Each tweak deflates live Sharpe.
