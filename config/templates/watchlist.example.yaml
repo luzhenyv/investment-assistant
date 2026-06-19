@@ -1,6 +1,26 @@
 # Watchlist template — copy into private/<profile>/watchlist.yaml.
-# Universe to scan each week. Holdings are scanned automatically too; list extra
-# names here that you don't yet own but want surfaced as entry candidates.
+#
+# HOW THIS FILE IS READ: the engine reads ONLY the flat list of tickers under `symbols:`.
+# Everything after a `#` is a comment for humans — section headers and the tags below have
+# no effect on scanning. Your holdings are scanned automatically too; list extra names here
+# that you don't yet own but want surfaced as entry candidates.
+#
+# CONVENTION (optional, for readability): one ticker per line, grouped by theme, roughly
+# sorted by market cap (large→small), with a trailing `# tag, tag` of labels. Add a name by
+# dropping it in the right section + tags. A name lives in ONE section but can carry many tags.
+#
+# TAG VOCABULARY (extend freely): mega7, semiconductor, equipment, memory, storage, ai,
+#   ai-infra, data-center, software, cloud, cybersecurity, internet, fintech, crypto,
+#   space, defense, healthcare, biotech, robotics, quantum, nuclear, energy, ev, media,
+#   consumer, consumer-staples, industrial, insurance.
 symbols:
-  - MSFT
-  - NVDA
+  # ───────── Mega-cap tech · "Mag 7" ─────────
+  - NVDA    # mega7, semiconductor, ai
+  - MSFT    # mega7, software, cloud, ai
+
+  # ───────── Semiconductors & equipment ─────────
+  - AVGO    # semiconductor, ai, software
+  - ASML    # semiconductor, equipment
+
+  # ───────── Software & cybersecurity ─────────
+  - PLTR    # software, ai, defense
