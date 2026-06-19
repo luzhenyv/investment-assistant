@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 
 @dataclass
@@ -51,3 +52,36 @@ class Recommendation:
     scores: dict = field(default_factory=dict)
     strategy_hint: list[str] = field(default_factory=list)
     dollar_gap: float | None = None   # signed $ to reach target weight (Add Core / Trim)
+
+
+@dataclass
+class OptionLeg:
+    action: str          # long | short
+    right: str           # call | put
+    strike: float
+    expiry: date
+    contracts: int = 1
+    premium: float | None = None   # per share, as paid/received at open
+
+
+@dataclass
+class OptionStrategy:
+    id: str
+    underlying: str
+    type: str            # vertical | pmcc | ...
+    legs: list[OptionLeg]
+    opened: date | None = None
+    net_debit: float | None = None         # per share (+ paid / - received); else computed
+    credits_collected: float = 0.0         # per share, cumulative premium from prior rolls
+    note: str = ""
+
+
+@dataclass
+class OptionAnalysis:
+    """Underlying-based (intrinsic-only) snapshot of one option strategy."""
+    id: str
+    underlying: str
+    type: str
+    intent: str          # Roll short call | Expiring — close or roll | Close — near max profit | Hold
+    reason: str
+    metrics: dict = field(default_factory=dict)

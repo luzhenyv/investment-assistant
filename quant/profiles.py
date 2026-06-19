@@ -12,8 +12,12 @@ from __future__ import annotations
 import os
 
 
-def resolve(root: str) -> tuple[str, str, str, str]:
-    """Return (config, portfolio, watchlist, out_dir) paths for the active profile."""
+def resolve(root: str) -> tuple[str, str, str, str, str]:
+    """Return (config, portfolio, watchlist, options, out_dir) paths for the active profile.
+
+    `options.yaml` is optional (not every profile records option positions), so it is
+    returned but not checked for existence — quant.options.load_options tolerates absence.
+    """
     profile = os.environ.get("PROFILE", "demo")
     if profile == "demo":
         base = os.path.join(root, "config", "demo")
@@ -22,6 +26,7 @@ def resolve(root: str) -> tuple[str, str, str, str]:
     config = os.path.join(base, "config.yaml")
     portfolio = os.path.join(base, "portfolio.yaml")
     watchlist = os.path.join(base, "watchlist.yaml")
+    options = os.path.join(base, "options.yaml")
     out_dir = os.path.join(root, "output", profile)
 
     for path in (config, portfolio, watchlist):
@@ -30,4 +35,4 @@ def resolve(root: str) -> tuple[str, str, str, str]:
                 f"PROFILE={profile}: missing {path}\n"
                 f"See docs/REAL_PORTFOLIO_SETUP.md to create your private profile."
             )
-    return config, portfolio, watchlist, out_dir
+    return config, portfolio, watchlist, options, out_dir

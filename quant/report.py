@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
-from quant.models import MarketState, Recommendation
+from quant.models import MarketState, OptionAnalysis, Recommendation
 
 
 def _rec_line(r: Recommendation) -> list[str]:
@@ -18,11 +18,32 @@ def _rec_line(r: Recommendation) -> list[str]:
     return lines
 
 
+def _option_line(a: OptionAnalysis) -> list[str]:
+    """Lines for a single option strategy in markdown."""
+    m = a.metrics
+    title = f"{a.underlying} {a.type.upper()}" if a.type else a.underlying
+    lines = [f"### {title} — **{a.intent}**", f"- {a.reason}"]
+    lines.append(f"- underlying ${m['underlying_price']:,.2f} ({m['legs']})")
+    dte = m.get("short_dte") if m.get("short_dte") is not None else m.get("nearest_dte")
+    risk = " · ITM → assignment risk" if m.get("assignment_risk") else ""
+    if m.get("breakeven") is not None:
+        lines.append(f"- DTE {dte}{risk} · breakeven ${m['breakeven']:,.2f}")
+    else:
+        lines.append(f"- DTE {dte}{risk}")
+    cap = ""
+    if m.get("max_profit") is not None and m.get("max_loss") is not None:
+        cap = f" · max profit ${m['max_profit']:,.0f} / max loss ${m['max_loss']:,.0f}"
+    lines.append(f"- net cost ${m['net_debit']:,.2f}/sh · intrinsic-floor P&L ${m['pnl_floor']:+,.0f}{cap}")
+    lines.append("")
+    return lines
+
+
 def render_markdown(
     generated_at: str,
     market: MarketState,
     holding_recs: list[Recommendation],
     watchlist_recs: list[Recommendation],
+    option_analyses: list[OptionAnalysis],
     summary: dict,
 ) -> str:
     out: list[str] = [f"# Weekly Investment Review — {generated_at}", ""]
@@ -56,6 +77,15 @@ def render_markdown(
     for r in holding_recs:
         out += _rec_line(r)
 
+    out.append("## Options — action list")
+    out.append("")
+    if option_analyses:
+        for a in option_analyses:
+            out += _option_line(a)
+    else:
+        out.append("_None recorded._")
+        out.append("")
+
     out.append("## Watchlist candidates")
     out.append("")
     if watchlist_recs:
@@ -67,6 +97,7 @@ def render_markdown(
 
     out.append("---")
     out.append("_Intents are intentions, not trades. You choose strikes and sizing._")
+    out.append("_Option P&L is an intrinsic-only floor (no time value); confirm marks with your broker._")
     return "\n".join(out)
 
 
@@ -77,9 +108,12 @@ def generate(
     market: MarketState,
     holding_recs: list[Recommendation],
     watchlist_recs: list[Recommendation],
+    option_analyses: list[OptionAnalysis],
     summary: dict,
 ) -> None:
-    md = render_markdown(generated_at, market, holding_recs, watchlist_recs, summary)
+    md = render_markdown(
+        generated_at, market, holding_recs, watchlist_recs, option_analyses, summary
+    )
     with open(md_path, "w") as f:
         f.write(md)
 
@@ -89,6 +123,7 @@ def generate(
         "portfolio": summary,
         "holdings": [asdict(r) for r in holding_recs],
         "watchlist": [asdict(r) for r in watchlist_recs],
+        "options": [asdict(a) for a in option_analyses],
     }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)

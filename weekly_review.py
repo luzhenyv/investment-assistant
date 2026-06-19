@@ -9,10 +9,10 @@ from datetime import datetime
 
 import yaml
 
-from quant import decision, market, portfolio, profiles, providers, report, scoring
+from quant import decision, market, options, portfolio, profiles, providers, report, scoring
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-CONFIG, PORTFOLIO, WATCHLIST, OUT_DIR = profiles.resolve(ROOT)
+CONFIG, PORTFOLIO, WATCHLIST, OPTIONS, OUT_DIR = profiles.resolve(ROOT)
 
 
 def _load_yaml(path: str) -> dict:
@@ -24,8 +24,10 @@ def main() -> None:
     cfg = _load_yaml(CONFIG)
     watch = _load_yaml(WATCHLIST).get("symbols", [])
     cash, holdings = portfolio.load_portfolio(PORTFOLIO)
+    strategies = options.load_options(OPTIONS)
 
-    symbols = sorted(set(watch) | set(holdings))
+    underlyings = {s.underlying for s in strategies}
+    symbols = sorted(set(watch) | set(holdings) | underlyings)
     print(f"Fetching data for {len(symbols)} symbols + SPY/QQQ/VIX ...")
 
     data_cfg = cfg["data"]
@@ -106,6 +108,13 @@ def main() -> None:
         "default_weight": default_weight,
     }
 
+    option_analyses = []
+    for s in strategies:
+        if s.underlying not in signals:
+            print(f"  ! skipping option {s.id}: no price for {s.underlying}")
+            continue
+        option_analyses.append(options.analyze(s, signals[s.underlying].price, datetime.now().date()))
+
     os.makedirs(OUT_DIR, exist_ok=True)
     now = datetime.now()
     generated_at = now.strftime("%Y-%m-%d %H:%M:%S")  # in-file header + JSON field
@@ -119,6 +128,7 @@ def main() -> None:
         mkt,
         holding_recs,
         watchlist_recs,
+        option_analyses,
         summary,
     )
     print(f"Report written to {md_path}")
