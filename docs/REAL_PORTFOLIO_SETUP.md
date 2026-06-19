@@ -67,6 +67,28 @@ If `private/` was scaffolded for you, skip to step 4 to fill in real numbers. Ot
    git -C private commit -m "Initial real portfolio"
    ```
 
+## `portfolio.yaml` field reference
+
+Each account's `portfolio.yaml` holds your cash and per-symbol share counts:
+
+```yaml
+cash: 30000
+positions:
+  MSFT: { core: 100, trading: 20, avg_cost: 425 }
+```
+
+| Field | Meaning | How the engine uses it |
+|---|---|---|
+| `cash` | Uninvested USD in the account. | Part of total portfolio value, and checked against the cash band in `config.yaml`. Below the band → "low" (no new buys suggested); above → "high" (room to add). See `quant/portfolio.py:cash_status`. |
+| `core` | **Share count** of long-term holdings you don't intend to sell. | Counts toward your position size, and is *protected*: in a weak regime (Correction / Panic) the engine suggests a **hedge** instead of selling core shares (`quant/decision.py`). |
+| `trading` | **Share count** of tactical shares you're willing to rotate out of. | Counts toward your position size; treated as the rotatable portion under stress. |
+| `avg_cost` | Average cost basis per share. | **Informational only** — for your own P&L reference. No decision or scoring logic reads it. |
+
+Two things to keep in mind:
+
+- **Position weight is computed from total shares = `core + trading`** (`quant/models.py`). The split only changes behavior under stress, not your target allocation — so if you don't distinguish long-term vs. tactical, just put everything in `core`.
+- Share counts may be **fractional** (e.g. `core: 12.5`).
+
 ## Weekly workflow
 
 1. Update `private/stocks/portfolio.yaml` — current cash and share counts.

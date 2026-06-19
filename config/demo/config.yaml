@@ -35,11 +35,15 @@ lifecycle:
                           # With 15% big-tier targets + 10% cash floor this concentrates
                           # in ~6 mega-caps; raise to ~10 to express the full tiered book
   entry_trend_min: 75     # min trend score to open a new watchlist position
-  entry_default_weight: 0.05  # slot weight for an entered name with no hand-set target
+  entry_default_weight: 0.06  # DEFAULT target weight for any name not listed in
+                              # target_weights below (applies to new entries AND held
+                              # names). 0.06 == the small/high-growth tier.
   max_steps: 3            # scale-in: reach target over this many weekly adds (step=target/3)
   rotation_margin: 0.10   # cash-low rotation: candidate must beat laggard RS by this
 
-# Per-symbol target weight of total portfolio value. Symbols not listed default to 0.
+# Per-symbol target weight of total portfolio value. Symbols NOT listed here fall back to
+# lifecycle.entry_default_weight (0.06) — i.e. treated as the small/high-growth tier by
+# default, so the watchlist can grow without hand-setting a weight for every name.
 # Three conviction tiers — let bigger/better-fundamental names size larger:
 #   0.15  mega-cap leaders (step 5%, momentum ceiling 20%)
 #   0.10  mid/large growth (step 3.3%, momentum ceiling ~13.3%)

@@ -1,5 +1,7 @@
 # Investment universe to scan each week. Holdings are scanned automatically too;
 # list extra names here that you don't yet own but want surfaced as candidates.
+# Names not given an explicit weight in config.yaml: target_weights automatically get the
+# default 0.06 target (lifecycle.entry_default_weight), so this list can grow freely.
 # Broadened with deep-history names so the 2019-start backtest rests on real history.
 # HOOD/HIMS/RKLB IPO'd ~2021 (~5y); NBIS (Nebius) only began trading ~late 2024, so
 # its tier sizing is essentially untested by the backtest — it rides for live use.
