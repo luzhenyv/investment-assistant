@@ -76,8 +76,11 @@ def main() -> None:
             signals, set(holdings), weights, mkt, cfg, total_value, cash_low
         )
     else:
-        max_positions = cfg.get("lifecycle", {}).get("max_positions", 7)
-        open_slots = max(0, max_positions - len(holdings))
+        max_positions = cfg.get("lifecycle", {}).get("max_positions", 8)
+        # Count only survivors: names flagged Close this week free their slot now, so the
+        # scan and the closes stay consistent within a single run (no false-empty list).
+        closing = {r.symbol for r in holding_recs if r.intent == "Close"}
+        open_slots = max(0, max_positions - (len(holdings) - len(closing)))
         watchlist_recs = decision.scan_watchlist(
             signals, set(holdings), mkt, cfg, open_slots, total_value
         )

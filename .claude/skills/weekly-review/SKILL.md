@@ -1,0 +1,51 @@
+---
+name: weekly-review
+description: Analyze a weekly portfolio review report (output/<profile>/weekly_report_*.md and its .json) and turn the engine's mechanical intents into a prioritized, judgment-layered action list — position adjustments, opportunities, and issues. Use this whenever the user shares or points at their weekly report, asks "what should I do with my portfolio/positions this week", "evaluate/review my portfolio", or questions a specific intent / watchlist / cash line — even if they don't say "skill".
+---
+
+# Weekly Review
+
+The weekly engine (`weekly_review.py`) emits mechanical per-symbol intents. They're correct by their
+own rules but lack judgment: they don't cross-check their own signals, flag internal inconsistencies,
+or explain *why*. Your job is that judgment layer — turn the report into a short, prioritized action
+list, and surface the opportunities and traps the mechanical pass misses.
+
+**Locate first** (newest wins): `output/<profile>/weekly_report_*.md` and its sibling `.json` (the
+JSON carries `dollar_gap`, `weights`/`cash_frac`, per-symbol `scores`). Ground every "why" in the
+engine code — `quant/scoring.py` (signal defs) and `quant/decision.py` (the rule ladder) — so
+explanations are accurate, not remembered. Skim them; don't trust memory of thresholds.
+
+## Signals — what each measures (horizon disagreement is where the insight is)
+- `trend` (0–100): +25 each for price>MA20, MA20>MA50, MA50>MA200, price>MA200. Structure.
+- `rsi`/`momentum`: 14-day RSI → short-term (~2wk) heat. RSI>70 ⇒ momentum 80, near overbought.
+- `rs`: 126-day (~6mo) trailing **total return** (`indicators.trailing_return`). Medium-term leadership.
+- `state`: first-match ladder in `asset_state()` — Broken / Mean Reversion / Trend Acceleration /
+  Trend Mature / Range. Acceleration fires on `breakout OR rsi≥accel_rsi`; the RSI-only branch is a
+  *short-term* trigger, not a structural new high.
+
+The strongest findings come from **signals that disagree across horizons.** Example: a name flagged
+Trend Acceleration via the RSI branch (hot, ~2wk) but with negative `rs` (a 6-month laggard) is
+*chasing a bounce*, not a confirmed leader — the weakest kind of "buy". Check `avg_cost` too: adding
+under water compounds it.
+
+## Checklist — verdict + one-line WHY for each
+1. **Action-list integrity.** Sum the `Close` `dollar_gap`s and recompute *true* post-close cash %.
+   The report's "deploy $X"/cash line is computed before the Closes — if they raise a lot, the real
+   picture is far more cash, not less. State the true number.
+2. **Buy-signal quality.** For every Add/Increase, check horizon agreement (trend vs rsi vs rs vs the
+   state trigger). Flag bounce-chasing; rank buys by conviction, not just by what fired.
+3. **Watchlist sanity.** Empty? Distinguish *false-empty* (`open_slots = max_positions − holdings`
+   still counting to-be-Closed names → 0) from *genuine* (quality floor `entry_rs_min`, or weak
+   regime). Name which, and what would unlock entries (execute closes / widen list).
+4. **Book vs market.** Compare market regime to holdings' states/`rs`. Broken or negative-`rs` names
+   in a strong tape = laggard drag worth calling out.
+5. **Sizing redeployment.** For survivors under target, give gap-to-target ranked by `rs`; note the
+   staged step (`target/max_steps`) and the structural cap — a few names at their ceilings can't
+   absorb a big cash pile, so redeployment usually needs watchlist entries, not just topping up.
+6. **Options.** Flag time-sensitive items: short calls ITM (assignment risk → roll up/out), low DTE.
+
+## Output
+Chat only — no file writes/edits unless asked. Lead with a one-line bottom line, then a priority-
+ordered action list (highest-conviction / most time-sensitive first), each with a short WHY grounded
+in the signals. Close with the single biggest lever or key open question. The user thinks like a PM —
+give the tradeoff, not a data dump.

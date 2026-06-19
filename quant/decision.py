@@ -199,11 +199,23 @@ def scan_watchlist(
 ) -> list[Recommendation]:
     """Rank unheld candidates by relative strength and surface up to `open_slots` to
     open. Entries need a constructive regime (skip Panic/Correction), an entry-grade
-    state, and a trend score clearing the bar. Each entry is a first scale-in step."""
+    state, and a trend score clearing the bar. Each entry is a first scale-in step.
+
+    Two opt-in `lifecycle` knobs tighten this: `entry_rs_min` drops candidates whose RS
+    doesn't clear the bar (so the list is genuinely empty when nothing is good, never
+    padded with weak names), and `max_watchlist` caps how many entries surface per week
+    below the open-slot count. Both default off (absent => current behavior)."""
     if open_slots <= 0 or market.regime in WEAK_REGIMES:
         return []
+    life = cfg.get("lifecycle", {})
+    rs_min = life.get("entry_rs_min")   # None => no quality floor
+    cap = life.get("max_watchlist")     # None => bounded only by open slots
+    cands = _entry_candidates(signals, held, cfg)
+    if rs_min is not None:
+        cands = [s for s in cands if s.rs > rs_min]  # else genuinely empty, no weak padding
+    n = open_slots if cap is None else min(open_slots, cap)
     out = []
-    for s in _entry_candidates(signals, held, cfg)[:open_slots]:
+    for s in cands[:n]:
         target = effective_target(s.symbol, cfg)
         step = staged_gap(0.0, target, target, total_value, cfg)
         out.append(

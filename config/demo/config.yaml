@@ -31,7 +31,7 @@ lifecycle:
   accel_extra_steps: 1    # Trend Acceleration may take this many extra scale-in steps
                           # beyond target (ceiling = target*(1+extra/max_steps)); with
                           # max_steps=3 one extra step lifts 15%->20%, 10%->13.3%, 6%->8%
-  max_positions: 7        # hold at most this many names (out of the wider watchlist).
+  max_positions: 8        # hold at most this many names (out of the wider watchlist).
                           # With 15% big-tier targets + 10% cash floor this concentrates
                           # in ~6 mega-caps; raise to ~10 to express the full tiered book
   entry_trend_min: 75     # min trend score to open a new watchlist position

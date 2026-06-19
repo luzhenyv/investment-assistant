@@ -166,6 +166,29 @@ def test_scan_watchlist_zero_slots():
     assert scan(signals, set(), BULL, 0) == []
 
 
+def test_scan_watchlist_entry_rs_min_floor():
+    # entry_rs_min drops laggards: a negative-RS candidate is excluded, leaving the list
+    # genuinely empty rather than padded with a weak pick.
+    cfg = {**CFG, "lifecycle": {"entry_rs_min": 0.0}}
+    laggard = {"AAA": sig(symbol="AAA", state="Trend Acceleration", trend=100, rs=-0.058)}
+    assert decision.scan_watchlist(laggard, set(), BULL, cfg, 5, 100000) == []
+    # positive RS still surfaces
+    good = {"BBB": sig(symbol="BBB", state="Trend Acceleration", trend=100, rs=0.20)}
+    out = decision.scan_watchlist(good, set(), BULL, cfg, 5, 100000)
+    assert len(out) == 1 and out[0].symbol == "BBB"
+
+
+def test_scan_watchlist_max_watchlist_cap():
+    # max_watchlist caps entries below the open-slot count.
+    cfg = {**CFG, "lifecycle": {"max_watchlist": 2}}
+    signals = {
+        c: sig(symbol=c, state="Trend Acceleration", trend=100, rs=r)
+        for c, r in [("A", 0.5), ("B", 0.4), ("C", 0.3), ("D", 0.2), ("E", 0.1)]
+    }
+    out = decision.scan_watchlist(signals, set(), BULL, cfg, 5, 100000)
+    assert [r.symbol for r in out] == ["A", "B"]  # top-2 by RS, capped at max_watchlist
+
+
 def rotate(signals, held, weights, mkt, cash_low=True, total=100000):
     return decision.rotation(signals, held, weights, mkt, CFG, total, cash_low)
 
