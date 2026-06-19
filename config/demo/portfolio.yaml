@@ -15,8 +15,12 @@
 #
 #   trading   SHARE COUNT of tactical shares you're willing to rotate out of.
 #
-#   avg_cost  Average cost basis per share. INFORMATIONAL ONLY — for your own P&L
-#             reference. No decision or scoring logic reads it.
+#   avg_cost  Per-share cost basis, computed per cost_method below. INFORMATIONAL ONLY —
+#             for your own P&L reference. No decision or scoring logic reads it.
+#
+#   cost_method  How avg_cost is computed: "diluted" (摊薄 — nets realized P&L into the
+#             shares you still hold, so it can go negative = house money) or "average"
+#             (持仓 — average price paid for shares held now, always ≥ 0). Informational only.
 #
 # NOTES
 #   • Position weight is computed from total shares = core + trading (models.py).
@@ -24,6 +28,7 @@
 #   • Share counts may be fractional (e.g. core: 12.5).
 #   • Full guide: docs/REAL_PORTFOLIO_SETUP.md
 cash: 30000
+cost_method: average   # diluted | average
 
 positions:
   # SYMBOL: { core: <shares>, trading: <shares>, avg_cost: <price/share> }

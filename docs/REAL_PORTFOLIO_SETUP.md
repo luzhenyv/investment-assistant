@@ -73,6 +73,7 @@ Each account's `portfolio.yaml` holds your cash and per-symbol share counts:
 
 ```yaml
 cash: 30000
+cost_method: diluted   # diluted | average
 positions:
   MSFT: { core: 100, trading: 20, avg_cost: 425 }
 ```
@@ -82,7 +83,8 @@ positions:
 | `cash` | Uninvested USD in the account. | Part of total portfolio value, and checked against the cash band in `config.yaml`. Below the band → "low" (no new buys suggested); above → "high" (room to add). See `quant/portfolio.py:cash_status`. |
 | `core` | **Share count** of long-term holdings you don't intend to sell. | Counts toward your position size, and is *protected*: in a weak regime (Correction / Panic) the engine suggests a **hedge** instead of selling core shares (`quant/decision.py`). |
 | `trading` | **Share count** of tactical shares you're willing to rotate out of. | Counts toward your position size; treated as the rotatable portion under stress. |
-| `avg_cost` | Average cost basis per share. | **Informational only** — for your own P&L reference. No decision or scoring logic reads it. |
+| `avg_cost` | Per-share cost basis, computed per `cost_method`. | **Informational only** — for your own P&L reference. No decision or scoring logic reads it. |
+| `cost_method` | How `avg_cost` is computed: `diluted` (摊薄 — nets realized P&L into the shares you still hold, so it can go **negative** = house money) or `average` (持仓 — average price paid for shares held now, always ≥ 0). | **Informational only** — records your convention so negatives read as intentional. No logic reads it yet; a future P&L feature would branch on it. |
 
 Two things to keep in mind:
 
