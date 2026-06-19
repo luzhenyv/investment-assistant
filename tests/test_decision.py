@@ -189,6 +189,19 @@ def test_scan_watchlist_max_watchlist_cap():
     assert [r.symbol for r in out] == ["A", "B"]  # top-2 by RS, capped at max_watchlist
 
 
+def test_scan_watchlist_parabolic_note():
+    # extended_ma200_mult tags an entry whose price runs far above its 200-day mean.
+    cfg = {**CFG, "scoring": {**CFG["scoring"], "extended_ma200_mult": 2.0}}
+    para = {"HOT": sig(symbol="HOT", state="Trend Acceleration", trend=100, rs=0.5,
+                       price=300, ma200=100)}  # 3.0x MA200
+    calm = {"OK": sig(symbol="OK", state="Trend Acceleration", trend=100, rs=0.5,
+                      price=110, ma200=100)}   # 1.1x MA200
+    assert "parabolic" in decision.scan_watchlist(para, set(), BULL, cfg, 5, 100000)[0].reason
+    assert "parabolic" not in decision.scan_watchlist(calm, set(), BULL, cfg, 5, 100000)[0].reason
+    # off by default (no extended_ma200_mult)
+    assert "parabolic" not in decision.scan_watchlist(para, set(), BULL, CFG, 5, 100000)[0].reason
+
+
 def rotate(signals, held, weights, mkt, cash_low=True, total=100000):
     return decision.rotation(signals, held, weights, mkt, CFG, total, cash_low)
 

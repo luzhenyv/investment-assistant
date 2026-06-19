@@ -28,12 +28,22 @@ Trend Acceleration via the RSI branch (hot, ~2wk) but with negative `rs` (a 6-mo
 *chasing a bounce*, not a confirmed leader — the weakest kind of "buy". Check `avg_cost` too: adding
 under water compounds it.
 
+**Validate extremes before judging them.** An outlier RS or an implausible-looking price is *either*
+a real parabola *or* a data error — don't assume bad data. Cross-check the cached series
+(`data/cache/SYMBOL_*.parquet`) **and** an external source (finviz / broker) before concluding.
+(Hard-won: a +300–870% RS on the memory names this session looked like garbage; finviz confirmed it
+was a real AI-memory melt-up. Verify, don't assume.)
+
 ## Checklist — verdict + one-line WHY for each
 1. **Action-list integrity.** Sum the `Close` `dollar_gap`s and recompute *true* post-close cash %.
    The report's "deploy $X"/cash line is computed before the Closes — if they raise a lot, the real
    picture is far more cash, not less. State the true number.
 2. **Buy-signal quality.** For every Add/Increase, check horizon agreement (trend vs rsi vs rs vs the
    state trigger). Flag bounce-chasing; rank buys by conviction, not just by what fired.
+   **Parabolic entries:** if a buy is extended (report shows the "strong but parabolic" flag, or
+   price ≫ MA200), treat it as strong-but-stretched — stage in (first step only), don't chase a
+   spike-day candle, treat a correlated cluster (same sector) as ONE bet and cap it, and prefer
+   defined-risk options. Strong RS is real *and* a parabola mean-reverts hard — both are true.
 3. **Watchlist sanity.** Empty? Distinguish *false-empty* (`open_slots = max_positions − holdings`
    still counting to-be-Closed names → 0) from *genuine* (quality floor `entry_rs_min`, or weak
    regime). Name which, and what would unlock entries (execute closes / widen list).

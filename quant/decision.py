@@ -58,6 +58,16 @@ def effective_ceiling(state: str, target_weight: float, cfg: dict) -> float:
     return base
 
 
+def extended_note(sig: Signal, cfg: dict) -> str:
+    """A 'parabolic' tag when price runs far above its 200-day mean — strong but
+    extended, so stage in rather than chase. Opt-in via scoring.extended_ma200_mult
+    (absent => empty string, no annotation). Cosmetic only — never changes an intent."""
+    mult = cfg.get("scoring", {}).get("extended_ma200_mult")
+    if mult and sig.ma200 and sig.price / sig.ma200 >= mult:
+        return f" ⚠️ strong but parabolic ({sig.price / sig.ma200:.1f}× MA200) — stage in, don't chase."
+    return ""
+
+
 def _scores(sig: Signal) -> dict:
     return {
         "state": sig.state,
@@ -127,7 +137,7 @@ def decide_holding(
         return Recommendation(
             intent="Add Core",
             reason=f"Trend Acceleration — pyramiding toward {ceiling:.0%} ceiling "
-            f"(~${step:,.0f} this step).",
+            f"(~${step:,.0f} this step).{extended_note(sig, cfg)}",
             dollar_gap=step,
             **base,
         )
@@ -223,7 +233,7 @@ def scan_watchlist(
                 symbol=s.symbol,
                 intent="Increase Exposure",
                 reason=f"Watchlist entry — {s.state}, RS {s.rs:+.1%} "
-                f"(open ~${step:,.0f}, step 1 toward {target:.0%}).",
+                f"(open ~${step:,.0f}, step 1 toward {target:.0%}).{extended_note(s, cfg)}",
                 scores=_scores(s),
                 dollar_gap=step,
             )
