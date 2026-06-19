@@ -85,3 +85,4 @@ class OptionAnalysis:
     intent: str          # Roll short call | Expiring — close or roll | Close — near max profit | Hold
     reason: str
     metrics: dict = field(default_factory=dict)
+    greeks: dict | None = None   # net position Greeks (Black-Scholes from live IV); None if IV unavailable

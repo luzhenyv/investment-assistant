@@ -34,6 +34,14 @@ def _option_line(a: OptionAnalysis) -> list[str]:
     if m.get("max_profit") is not None and m.get("max_loss") is not None:
         cap = f" · max profit ${m['max_profit']:,.0f} / max loss ${m['max_loss']:,.0f}"
     lines.append(f"- net cost ${m['net_debit']:,.2f}/sh · intrinsic-floor P&L ${m['pnl_floor']:+,.0f}{cap}")
+    if a.greeks:
+        g = a.greeks
+        lines.append(
+            f"- Greeks (net): Δ {g['net_delta']:+.0f} sh · Θ ${g['net_theta']:+,.2f}/day · "
+            f"vega ${g['net_vega']:+,.2f}/1% · Γ {g['net_gamma']:+.3f} · ρ ${g['net_rho']:+,.2f}/1%"
+        )
+    else:
+        lines.append("- Greeks: unavailable (live IV not found)")
     lines.append("")
     return lines
 
@@ -98,6 +106,7 @@ def render_markdown(
     out.append("---")
     out.append("_Intents are intentions, not trades. You choose strikes and sizing._")
     out.append("_Option P&L is an intrinsic-only floor (no time value); confirm marks with your broker._")
+    out.append("_Greeks are Black-Scholes from live implied vol (q=0); deep-ITM IV can be unreliable._")
     return "\n".join(out)
 
 

@@ -55,6 +55,29 @@ def fetch_history(
     return out
 
 
+def fetch_option_chain(symbol: str, expiry: str) -> dict[tuple[str, float], float] | None:
+    """Live implied volatility per contract for one expiry: {(right, strike): iv}.
+
+    `expiry` is an ISO date string. Returns None when the expiry isn't listed or the
+    download fails (caller degrades to no-Greeks). Deep-ITM / illiquid strikes report
+    garbage IV from yfinance, so anything NaN or outside (0.01, 3.0) is dropped."""
+    try:
+        tk = yf.Ticker(symbol)
+        if expiry not in tk.options:
+            return None
+        chain = tk.option_chain(expiry)
+    except Exception:
+        return None
+
+    ivs: dict[tuple[str, float], float] = {}
+    for right, frame in (("call", chain.calls), ("put", chain.puts)):
+        for strike, iv in zip(frame["strike"], frame["impliedVolatility"]):
+            iv = float(iv)
+            if 0.01 < iv < 3.0:
+                ivs[(right, float(strike))] = iv
+    return ivs
+
+
 def fetch_vix_history(period: str) -> pl.DataFrame | None:
     """Full VIX close history (cached) — used by the backtester for as-of lookups."""
     return cache.load_or_fetch("VIX", lambda: _download_vix(period), min_rows=1)

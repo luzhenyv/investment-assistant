@@ -108,12 +108,29 @@ def main() -> None:
         "default_weight": default_weight,
     }
 
+    r = cfg.get("backtest", {}).get("costs", {}).get("cash_apy", 0.04)
+    chains: dict[tuple[str, str], dict | None] = {}  # (underlying, expiry) -> IV map, memoized
     option_analyses = []
     for s in strategies:
         if s.underlying not in signals:
             print(f"  ! skipping option {s.id}: no price for {s.underlying}")
             continue
-        option_analyses.append(options.analyze(s, signals[s.underlying].price, datetime.now().date()))
+        ivs: dict[tuple[str, float, str], float] = {}
+        for leg in s.legs:
+            if leg.expiry is None:
+                continue
+            expiry = leg.expiry.isoformat()
+            key = (s.underlying, expiry)
+            if key not in chains:
+                chains[key] = providers.fetch_option_chain(s.underlying, expiry)
+                if chains[key] is None:
+                    print(f"  ! no option chain for {s.underlying} {expiry} — Greeks unavailable")
+            chain = chains[key]
+            if chain and (leg.right, float(leg.strike)) in chain:
+                ivs[(leg.right, float(leg.strike), expiry)] = chain[(leg.right, float(leg.strike))]
+        option_analyses.append(
+            options.analyze(s, signals[s.underlying].price, datetime.now().date(), ivs, r)
+        )
 
     os.makedirs(OUT_DIR, exist_ok=True)
     now = datetime.now()

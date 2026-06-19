@@ -6,6 +6,7 @@ The P&L reported is therefore an *intrinsic-only floor* — it ignores remaining
 time value, so a real mark is at least this good. Pure given inputs."""
 from __future__ import annotations
 
+import math
 from datetime import date
 
 import yaml
@@ -74,7 +75,71 @@ def _leg_intrinsic(leg: OptionLeg, price: float) -> float:
     return value if leg.action == "long" else -value
 
 
-def analyze(strat: OptionStrategy, underlying_price: float, today: date) -> OptionAnalysis:
+def _norm_cdf(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _norm_pdf(x: float) -> float:
+    return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
+
+
+def _bs_greeks(S: float, K: float, T: float, r: float, sigma: float, right: str) -> dict | None:
+    """Per-share Black-Scholes Greeks (dividend yield q=0). vega per 1.00 vol,
+    theta per year, rho per 1.00 rate — normalized at aggregation. None if degenerate."""
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return None
+    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    disc = math.exp(-r * T)
+    gamma = _norm_pdf(d1) / (S * sigma * math.sqrt(T))
+    vega = S * _norm_pdf(d1) * math.sqrt(T)
+    if right == "call":
+        delta = _norm_cdf(d1)
+        theta = -(S * _norm_pdf(d1) * sigma) / (2 * math.sqrt(T)) - r * K * disc * _norm_cdf(d2)
+        rho = K * T * disc * _norm_cdf(d2)
+    else:
+        delta = _norm_cdf(d1) - 1.0
+        theta = -(S * _norm_pdf(d1) * sigma) / (2 * math.sqrt(T)) + r * K * disc * _norm_cdf(-d2)
+        rho = -K * T * disc * _norm_cdf(-d2)
+    return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}
+
+
+def _net_greeks(
+    strat: OptionStrategy, S: float, today: date, ivs: dict, r: float
+) -> dict | None:
+    """Sum signed, position-scaled (×100×contracts) Greeks across legs. Returns None if
+    any leg lacks a usable IV (implied-only — no realized fallback)."""
+    net = {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0, "rho": 0.0}
+    for leg in strat.legs:
+        if leg.expiry is None:
+            return None
+        sigma = ivs.get((leg.right, float(leg.strike), leg.expiry.isoformat()))
+        if sigma is None:
+            return None
+        T = (leg.expiry - today).days / 365.0
+        g = _bs_greeks(S, leg.strike, T, r, sigma, leg.right)
+        if g is None:
+            return None
+        sign = 1.0 if leg.action == "long" else -1.0
+        scale = sign * 100 * leg.contracts
+        for k in net:
+            net[k] += scale * g[k]
+    return {
+        "net_delta": round(net["delta"], 1),       # share-equivalents
+        "net_gamma": round(net["gamma"], 3),        # Δ-shares per $1 move
+        "net_vega": round(net["vega"] / 100, 2),    # $ per 1 vol point
+        "net_theta": round(net["theta"] / 365, 2),  # $ per calendar day
+        "net_rho": round(net["rho"] / 100, 2),      # $ per 1% rate
+    }
+
+
+def analyze(
+    strat: OptionStrategy,
+    underlying_price: float,
+    today: date,
+    ivs: dict | None = None,
+    r: float = 0.04,
+) -> OptionAnalysis:
     net_debit = _net_debit(strat)
     contracts = max((l.contracts for l in strat.legs), default=1)
     mult = 100 * contracts
@@ -136,6 +201,7 @@ def analyze(strat: OptionStrategy, underlying_price: float, today: date) -> Opti
         "nearest_dte": nearest_dte,
         "assignment_risk": assignment_risk,
     }
+    greeks = _net_greeks(strat, underlying_price, today, ivs or {}, r)
     return OptionAnalysis(
         id=strat.id,
         underlying=strat.underlying,
@@ -143,4 +209,5 @@ def analyze(strat: OptionStrategy, underlying_price: float, today: date) -> Opti
         intent=intent,
         reason=reason,
         metrics=metrics,
+        greeks=greeks,
     )
