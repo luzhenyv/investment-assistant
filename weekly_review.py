@@ -82,6 +82,18 @@ def main() -> None:
     decision.attach_strategy_hints(holding_recs, cfg["intent_strategy_map"])
     decision.attach_strategy_hints(watchlist_recs, cfg["intent_strategy_map"])
 
+    # Flag held / buy-recommended names with no hand-set target weight (riding the default).
+    buy_intents = {"Add Core", "Increase Exposure"}
+    configured = cfg.get("target_weights", {})
+    default_weight = cfg.get("lifecycle", {}).get("entry_default_weight", 0.05)
+    flagged = set(holdings)
+    flagged |= {r.symbol for r in holding_recs + watchlist_recs if r.intent in buy_intents}
+    unconfigured = sorted(s for s in flagged if s not in configured)
+    if unconfigured:
+        print(f"⚠️  {len(unconfigured)} symbol(s) using the default {default_weight:.0%} target "
+              f"(no target_weights entry): {', '.join(unconfigured)}")
+        print("    → add an explicit weight in config.yaml: target_weights to size them intentionally.")
+
     cash_frac = cash / total_value if total_value else 0.0
     deployable = max(0.0, cash - cfg["cash_band"]["max"] * total_value)
     summary = {
@@ -90,6 +102,8 @@ def main() -> None:
         "cash_frac": cash_frac,
         "cash_status": cash_state,
         "deployable": deployable,
+        "unconfigured_targets": unconfigured,
+        "default_weight": default_weight,
     }
 
     os.makedirs(OUT_DIR, exist_ok=True)

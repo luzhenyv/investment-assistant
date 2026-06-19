@@ -1,10 +1,32 @@
 # Your current holdings. Update by hand each week (no broker integration in v0.1).
-# core    = long-term shares you don't intend to sell
-# trading = tactical shares you may rotate
-# avg_cost = average cost basis per share (informational)
+#
+# FIELD REFERENCE
+#   cash      Uninvested USD in the account. Counts toward total portfolio value AND
+#             is checked against the cash band in config.yaml: if cash/total falls
+#             below the band the engine treats you as "low" (won't suggest new buys),
+#             above it as "high" (room to add). See quant/portfolio.py:cash_status.
+#
+#   positions  One entry per symbol you hold: { core, trading, avg_cost }.
+#
+#   core      SHARE COUNT of long-term holdings you don't intend to sell. Beyond
+#             sizing, core is treated as protected: in a weak market regime
+#             (Correction / Panic) the engine suggests a HEDGE rather than selling
+#             core shares. See quant/decision.py.
+#
+#   trading   SHARE COUNT of tactical shares you're willing to rotate out of.
+#
+#   avg_cost  Average cost basis per share. INFORMATIONAL ONLY — for your own P&L
+#             reference. No decision or scoring logic reads it.
+#
+# NOTES
+#   • Position weight is computed from total shares = core + trading (models.py).
+#     The core/trading split only changes behavior under stress, not your target size.
+#   • Share counts may be fractional (e.g. core: 12.5).
+#   • Full guide: docs/REAL_PORTFOLIO_SETUP.md
 cash: 30000
 
 positions:
+  # SYMBOL: { core: <shares>, trading: <shares>, avg_cost: <price/share> }
   MSFT: { core: 100, trading: 20, avg_cost: 425 }
   NVDA: { core: 30,  trading: 0,  avg_cost: 155 }
   GOOG: { core: 20,  trading: 10, avg_cost: 171 }

@@ -41,6 +41,16 @@ def render_markdown(
         out.append(f"- Cash above ceiling — consider deploying up to ${summary['deployable']:,.0f}.")
     out.append("")
 
+    unconfigured = summary.get("unconfigured_targets") or []
+    if unconfigured:
+        out.append("## ⚙️ Config reminder")
+        out.append(
+            f"- Held / buy-candidate names with **no `target_weights` entry**, sized at the "
+            f"default {summary.get('default_weight', 0):.0%}: **{', '.join(unconfigured)}**."
+        )
+        out.append("- Set an explicit weight in `config.yaml: target_weights` to size them intentionally.")
+        out.append("")
+
     out.append("## Holdings — action list")
     out.append("")
     for r in holding_recs:

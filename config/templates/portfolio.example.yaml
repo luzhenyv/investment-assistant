@@ -1,10 +1,19 @@
 # Portfolio template — copy into private/<profile>/portfolio.yaml and fill with real numbers.
 # Update by hand each week (no broker integration in v0.1).
-#   core    = long-term shares you don't intend to sell
-#   trading = tactical shares you may rotate
-#   avg_cost = average cost basis per share (informational only)
+#
+# FIELD REFERENCE
+#   cash      Uninvested USD in the account. Counts toward total portfolio value AND
+#             is checked against the cash band in config.yaml: below the band = "low"
+#             (no new buys suggested), above = "high" (room to add).
+#   core      SHARE COUNT of long-term holdings you don't intend to sell. Protected in
+#             weak regimes (Correction / Panic) — the engine hedges instead of selling.
+#   trading   SHARE COUNT of tactical shares you're willing to rotate out of.
+#   avg_cost  Average cost basis per share. INFORMATIONAL ONLY — no logic reads it.
+#
+# Position weight = total shares (core + trading); the split only matters under stress.
+# Share counts may be fractional. Full guide: docs/REAL_PORTFOLIO_SETUP.md
 cash: 0
 
 positions:
-  # SYMBOL: { core: <shares>, trading: <shares>, avg_cost: <price> }
+  # SYMBOL: { core: <shares>, trading: <shares>, avg_cost: <price/share> }
   MSFT: { core: 0, trading: 0, avg_cost: 0 }
