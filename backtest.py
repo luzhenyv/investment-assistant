@@ -13,7 +13,7 @@ import yaml
 from quant import backtest, plotting, portfolio, profiles, providers
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-CONFIG, PORTFOLIO, WATCHLIST, OUT_DIR = profiles.resolve(ROOT)
+CONFIG, PORTFOLIO, WATCHLIST, _OPTIONS, OUT_DIR = profiles.resolve(ROOT)
 
 
 def _load_yaml(path: str) -> dict:
