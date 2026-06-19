@@ -207,23 +207,29 @@ def scan_watchlist(
     open_slots: int,
     total_value: float,
 ) -> list[Recommendation]:
-    """Rank unheld candidates by relative strength and surface up to `open_slots` to
-    open. Entries need a constructive regime (skip Panic/Correction), an entry-grade
+    """Rank unheld candidates by relative strength and surface a shortlist to choose
+    from. Entries need a constructive regime (skip Panic/Correction), an entry-grade
     state, and a trend score clearing the bar. Each entry is a first scale-in step.
 
-    Two opt-in `lifecycle` knobs tighten this: `entry_rs_min` drops candidates whose RS
-    doesn't clear the bar (so the list is genuinely empty when nothing is good, never
-    padded with weak names), and `max_watchlist` caps how many entries surface per week
-    below the open-slot count. Both default off (absent => current behavior)."""
+    Surfaces `open_slots + watchlist_extra` candidates (capped at `max_watchlist`) so the
+    human has selection room beyond what's strictly buyable — only the top `open_slots`
+    are actually buyable, and the backtester executes just those. Three opt-in `lifecycle`
+    knobs: `entry_rs_min` drops candidates whose RS doesn't clear the bar (so the list is
+    genuinely empty when nothing is good, never padded with weak names), `watchlist_extra`
+    is the selection buffer beyond open slots, and `max_watchlist` is the absolute ceiling
+    on how many to show. All default off (absent => surface exactly `open_slots`)."""
     if open_slots <= 0 or market.regime in WEAK_REGIMES:
         return []
     life = cfg.get("lifecycle", {})
-    rs_min = life.get("entry_rs_min")   # None => no quality floor
-    cap = life.get("max_watchlist")     # None => bounded only by open slots
+    rs_min = life.get("entry_rs_min")        # None => no quality floor
+    cap = life.get("max_watchlist")          # None => no absolute ceiling
+    extra = life.get("watchlist_extra", 0)   # surface this many beyond open slots
     cands = _entry_candidates(signals, held, cfg)
     if rs_min is not None:
         cands = [s for s in cands if s.rs > rs_min]  # else genuinely empty, no weak padding
-    n = open_slots if cap is None else min(open_slots, cap)
+    n = open_slots + extra
+    if cap is not None:
+        n = min(n, cap)
     out = []
     for s in cands[:n]:
         target = effective_target(s.symbol, cfg)

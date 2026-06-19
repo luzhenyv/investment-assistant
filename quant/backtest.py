@@ -207,9 +207,12 @@ def run(
             )
         else:
             open_slots = max(0, max_positions - len(held))
+            # scan_watchlist may surface a shortlist beyond open slots (selection room for
+            # the live report); only the top `open_slots` are buyable, so cap execution here
+            # to keep max_positions intact.
             recs += decision.scan_watchlist(
                 signals, held, mkt, cfg, open_slots, total_value
-            )
+            )[:open_slots]
 
         cash = _execute(recs, shares, prices, total_value, cfg, cash, cash_band, acc)
 

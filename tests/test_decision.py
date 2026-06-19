@@ -189,6 +189,29 @@ def test_scan_watchlist_max_watchlist_cap():
     assert [r.symbol for r in out] == ["A", "B"]  # top-2 by RS, capped at max_watchlist
 
 
+def _cand_pool(rs_values):
+    return {
+        c: sig(symbol=c, state="Trend Acceleration", trend=100, rs=r)
+        for c, r in zip("ABCDEF", rs_values)
+    }
+
+
+def test_scan_watchlist_extra_over_slots():
+    # watchlist_extra surfaces a shortlist beyond open slots for selection room.
+    cfg = {**CFG, "lifecycle": {"watchlist_extra": 2, "max_watchlist": 5}}
+    signals = _cand_pool([0.6, 0.5, 0.4, 0.3, 0.2, 0.1])  # 6 eligible
+    out = decision.scan_watchlist(signals, set(), BULL, cfg, 3, 100000)  # 3 open slots
+    assert len(out) == 5  # open_slots(3) + extra(2), under the ceiling
+
+
+def test_scan_watchlist_extra_capped_by_ceiling():
+    # max_watchlist caps the shortlist even when open_slots + extra would exceed it.
+    cfg = {**CFG, "lifecycle": {"watchlist_extra": 2, "max_watchlist": 5}}
+    signals = _cand_pool([0.6, 0.5, 0.4, 0.3, 0.2, 0.1])
+    out = decision.scan_watchlist(signals, set(), BULL, cfg, 6, 100000)  # 6 open slots
+    assert len(out) == 5  # min(6 + 2, 5)
+
+
 def test_scan_watchlist_parabolic_note():
     # extended_ma200_mult tags an entry whose price runs far above its 200-day mean.
     cfg = {**CFG, "scoring": {**CFG["scoring"], "extended_ma200_mult": 2.0}}
