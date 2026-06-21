@@ -4,6 +4,7 @@ an *intent* per holding, plus a light watchlist scan. Pure functions — no I/O.
 Rules are first-match-wins per holding. Thresholds come from config."""
 from __future__ import annotations
 
+from quant import indicators
 from quant.models import Holding, MarketState, Recommendation, Signal
 
 WEAK_REGIMES = {"Correction", "Panic"}
@@ -68,8 +69,8 @@ def extended_note(sig: Signal, cfg: dict) -> str:
     return ""
 
 
-def _scores(sig: Signal) -> dict:
-    return {
+def _scores(sig: Signal, sector: str | None = None) -> dict:
+    scores = {
         "state": sig.state,
         "trend": round(sig.trend_score),
         "momentum": round(sig.momentum_score),
@@ -77,6 +78,9 @@ def _scores(sig: Signal) -> dict:
         "rsi": round(sig.rsi),
         "price": round(sig.price, 2),
     }
+    if sector:
+        scores["sector"] = sector
+    return scores
 
 
 def decide_holding(
@@ -199,6 +203,54 @@ def _entry_candidates(signals, held, cfg):
     return cands
 
 
+def _diversified(cands, held, sectors, history, cfg):
+    """Filter the RS-ranked `cands` (in RS order) through diversification gates so the
+    shortlist isn't several names that are really the same trade. Two opt-in
+    `lifecycle` knobs — both absent => `cands` returned unchanged:
+
+      * `sector_cap` — keep at most this many candidates per sector, seeding each
+        sector's count from current holdings (so owning two semis already blocks a
+        third). An "Unknown" sector is never capped — we can't confirm it's a real
+        cluster, and the correlation gate still de-dups those names.
+      * `corr_max`   — drop a candidate whose trailing-returns correlation to any
+        already-kept candidate or current holding exceeds this (over `corr_lookback`
+        bars). The "tiebreak" that thins crowded sectors and cross-sector co-movers.
+
+    Both reference the current book, so a name redundant with what you already own is
+    suppressed even when it tops the RS ranking."""
+    life = cfg.get("lifecycle", {})
+    sector_cap = life.get("sector_cap")
+    corr_max = life.get("corr_max")
+    if sector_cap is None and corr_max is None:
+        return cands  # diversification off — identical to pure-RS ranking
+    sectors = sectors or {}
+    history = history or {}
+    lookback = life.get("corr_lookback", 63)
+
+    counts: dict[str, int] = {}
+    for h in held:
+        sec = sectors.get(h, "Unknown")
+        counts[sec] = counts.get(sec, 0) + 1
+    ref = [h for h in held if h in history]  # held names with price data for correlation
+
+    kept = []
+    for s in cands:
+        sec = sectors.get(s.symbol, "Unknown")
+        if sector_cap is not None and sec != "Unknown" and counts.get(sec, 0) >= sector_cap:
+            continue
+        if corr_max is not None and s.symbol in history and any(
+            indicators.correlation(history[s.symbol], history[r], lookback) > corr_max
+            for r in ref
+            if r in history
+        ):
+            continue
+        kept.append(s)
+        counts[sec] = counts.get(sec, 0) + 1
+        if s.symbol in history:
+            ref.append(s.symbol)
+    return kept
+
+
 def scan_watchlist(
     signals: dict[str, Signal],
     held: set[str],
@@ -206,6 +258,8 @@ def scan_watchlist(
     cfg: dict,
     open_slots: int,
     total_value: float,
+    sectors: dict | None = None,
+    history: dict | None = None,
 ) -> list[Recommendation]:
     """Rank unheld candidates by relative strength and surface a shortlist to choose
     from. Entries need a constructive regime (skip Panic/Correction), an entry-grade
@@ -227,6 +281,7 @@ def scan_watchlist(
     cands = _entry_candidates(signals, held, cfg)
     if rs_min is not None:
         cands = [s for s in cands if s.rs > rs_min]  # else genuinely empty, no weak padding
+    cands = _diversified(cands, held, sectors, history, cfg)
     n = open_slots + extra
     if cap is not None:
         n = min(n, cap)
@@ -240,7 +295,7 @@ def scan_watchlist(
                 intent="Increase Exposure",
                 reason=f"Watchlist entry — {s.state}, RS {s.rs:+.1%} "
                 f"(open ~${step:,.0f}, step 1 toward {target:.0%}).{extended_note(s, cfg)}",
-                scores=_scores(s),
+                scores=_scores(s, (sectors or {}).get(s.symbol)),
                 dollar_gap=step,
             )
         )
@@ -255,6 +310,8 @@ def rotation(
     cfg: dict,
     total_value: float,
     cash_low: bool,
+    sectors: dict | None = None,
+    history: dict | None = None,
 ) -> list[Recommendation]:
     """When cash is at the floor, free capital by rotating out the weakest laggard to
     fund the strongest fresh candidate. Graduated: fully Close a deeply weak laggard,
@@ -262,7 +319,7 @@ def rotation(
     rotation per call. Returns [exit_action, entry] so the exit frees cash first."""
     if not cash_low or market.regime in WEAK_REGIMES:
         return []
-    cands = _entry_candidates(signals, held, cfg)
+    cands = _diversified(_entry_candidates(signals, held, cfg), held, sectors, history, cfg)
     laggards = [
         signals[sym]
         for sym in held
@@ -303,7 +360,7 @@ def rotation(
         intent="Increase Exposure",
         reason=f"Rotate in — strongest candidate (RS {best.rs:+.1%}), funded by "
         f"{worst.symbol}.",
-        scores=_scores(best),
+        scores=_scores(best, (sectors or {}).get(best.symbol)),
         dollar_gap=staged_gap(0.0, bt, bt, total_value, cfg),
     )
     return [exit_action, entry]

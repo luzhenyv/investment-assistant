@@ -1,3 +1,7 @@
+from datetime import date, timedelta
+
+import polars as pl
+
 from quant import decision
 from quant.models import Holding, MarketState, Signal
 
@@ -279,3 +283,92 @@ def test_attach_strategy_hints():
     recs = [decision.Recommendation(symbol="X", intent="Hedge", reason="")]
     decision.attach_strategy_hints(recs, {"Hedge": ["Bear Put Spread"]})
     assert recs[0].strategy_hint == ["Bear Put Spread"]
+
+
+# --- Diversification gate (sector cap + correlation de-dup) ---------------------------
+
+# Varying daily returns so the series has nonzero variance (constant returns => corr is
+# undefined/null). A clone correlates +1 with this; the negation correlates -1.
+_RETS = [0.02 if i % 3 else -0.015 for i in range(80)]
+
+
+def _frame(rets):
+    """Synthetic OHLC-ish price frame (date + Close) built from a daily-return series."""
+    closes = [100.0]
+    for r in rets:
+        closes.append(round(closes[-1] * (1 + r), 4))
+    dates = [date(2024, 1, 1) + timedelta(days=i) for i in range(len(closes))]
+    return pl.DataFrame({"date": dates, "Close": closes})
+
+
+UP = _frame(_RETS)              # reference path
+CLONE = _frame(_RETS)           # corr +1 with UP
+ANTI = _frame([-r for r in _RETS])  # corr -1 with UP
+
+
+def test_scan_watchlist_diversification_off_by_default():
+    # Passing sectors/history but no knobs => identical to pure-RS ranking.
+    signals = _cand_pool([0.6, 0.5, 0.4])
+    sectors = {c: "Tech" for c in "ABC"}
+    out = decision.scan_watchlist(signals, set(), BULL, CFG, 5, 100000, sectors=sectors)
+    assert [r.symbol for r in out] == ["A", "B", "C"]
+
+
+def test_scan_watchlist_sector_cap():
+    cfg = {**CFG, "lifecycle": {"sector_cap": 2}}
+    signals = _cand_pool([0.6, 0.5, 0.4, 0.3, 0.2])  # A..E, all Tech
+    sectors = {c: "Tech" for c in "ABCDE"}
+    out = decision.scan_watchlist(signals, set(), BULL, cfg, 5, 100000, sectors=sectors)
+    assert [r.symbol for r in out] == ["A", "B"]  # capped at 2 per sector
+
+
+def test_scan_watchlist_sector_cap_counts_holdings():
+    # A held Tech name already fills one of the two sector slots.
+    cfg = {**CFG, "lifecycle": {"sector_cap": 2}}
+    signals = _cand_pool([0.6, 0.5, 0.4])  # A,B,C unheld
+    sectors = {"A": "Tech", "B": "Tech", "C": "Tech", "OWN": "Tech"}
+    out = decision.scan_watchlist(signals, {"OWN"}, BULL, cfg, 5, 100000, sectors=sectors)
+    assert [r.symbol for r in out] == ["A"]  # OWN(1) + A(1) hits the cap of 2
+
+
+def test_scan_watchlist_sector_label_in_scores():
+    cfg = {**CFG, "lifecycle": {"sector_cap": 5}}
+    signals = _cand_pool([0.6])
+    out = decision.scan_watchlist(signals, set(), BULL, cfg, 5, 100000, sectors={"A": "Tech"})
+    assert out[0].scores["sector"] == "Tech"
+
+
+def test_scan_watchlist_unknown_sector_not_capped():
+    # Names with no sector data are never sector-capped (can't confirm a cluster).
+    cfg = {**CFG, "lifecycle": {"sector_cap": 1}}
+    signals = _cand_pool([0.6, 0.5, 0.4])
+    out = decision.scan_watchlist(signals, set(), BULL, cfg, 5, 100000, sectors={})
+    assert [r.symbol for r in out] == ["A", "B", "C"]
+
+
+def test_scan_watchlist_corr_dedup_within_shortlist():
+    # B moves exactly like the already-kept A (different sectors, so only corr can drop it).
+    cfg = {**CFG, "lifecycle": {"corr_max": 0.85, "corr_lookback": 60}}
+    signals = _cand_pool([0.6, 0.5])  # A strongest, then B
+    sectors = {"A": "Tech", "B": "Health"}
+    history = {"A": UP, "B": CLONE}
+    out = decision.scan_watchlist(signals, set(), BULL, cfg, 5, 100000,
+                                  sectors=sectors, history=history)
+    assert [r.symbol for r in out] == ["A"]
+
+
+def test_scan_watchlist_corr_keeps_uncorrelated():
+    cfg = {**CFG, "lifecycle": {"corr_max": 0.85, "corr_lookback": 60}}
+    signals = _cand_pool([0.6, 0.5])  # A, B
+    history = {"A": UP, "B": ANTI}  # corr -1 < 0.85 -> B survives
+    out = decision.scan_watchlist(signals, set(), BULL, cfg, 5, 100000, history=history)
+    assert [r.symbol for r in out] == ["A", "B"]
+
+
+def test_scan_watchlist_corr_vs_current_holding():
+    # A candidate redundant with a name you already own is dropped.
+    cfg = {**CFG, "lifecycle": {"corr_max": 0.85, "corr_lookback": 60}}
+    signals = _cand_pool([0.6])  # A only
+    history = {"A": UP, "OWN": CLONE}
+    out = decision.scan_watchlist(signals, {"OWN"}, BULL, cfg, 5, 100000, history=history)
+    assert out == []

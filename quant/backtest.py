@@ -31,7 +31,7 @@ from datetime import date
 
 import polars as pl
 
-from quant import decision, market, portfolio, scoring
+from quant import decision, market, portfolio, providers, scoring
 from quant.models import Holding
 
 WARMUP = 200  # trading days needed before the first signal (MA200 window)
@@ -156,6 +156,7 @@ def run(
         start_date = date.fromisoformat(start)
         rebal_dates = [d for d in rebal_dates if d >= start_date]
     cash_band = cfg["cash_band"]
+    sectors = providers.load_cached_sectors(list(history))  # offline, for diversification
     max_positions = cfg.get("lifecycle", {}).get("max_positions", 7)
     cash_apy = cfg.get("backtest", {}).get("costs", {}).get("cash_apy", 0.0)
 
@@ -192,6 +193,8 @@ def run(
             for sym, df in history.items()
             if sym not in ("SPY", "QQQ") and (sub := _as_of(df, t)).height >= WARMUP
         }
+        # As-of-t price slices for correlation in the diversification gate (no look-ahead).
+        hist_sub = {sym: _as_of(history[sym], t) for sym in signals}
         spy_sig = scoring.build_signal("SPY", spy_sub, cfg)
         qqq_sig = scoring.build_signal("QQQ", qqq_sub, cfg)
         mkt = market.detect_market(spy_sig, qqq_sig, _vix_as_of(vix_hist, t))
@@ -213,7 +216,7 @@ def run(
         ]
         if cash_low:
             recs += decision.rotation(
-                signals, held, weights, mkt, cfg, total_value, cash_low
+                signals, held, weights, mkt, cfg, total_value, cash_low, sectors, hist_sub
             )
         else:
             open_slots = max(0, max_positions - len(held))
@@ -221,7 +224,7 @@ def run(
             # the live report); only the top `open_slots` are buyable, so cap execution here
             # to keep max_positions intact.
             recs += decision.scan_watchlist(
-                signals, held, mkt, cfg, open_slots, total_value
+                signals, held, mkt, cfg, open_slots, total_value, sectors, hist_sub
             )[:open_slots]
 
         # Fill on the next trading day's open — decisions are sized as-of the
