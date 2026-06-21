@@ -40,6 +40,13 @@ lifecycle:
                               # names). 0.06 == the small/high-growth tier.
   max_steps: 3            # scale-in: reach target over this many weekly adds (step=target/3)
   rotation_margin: 0.10   # cash-low rotation: candidate must beat laggard RS by this
+  # Watchlist diversification (both gates opt-in; omit BOTH => pure-RS ranking, backtest
+  # byte-identical to before). Each gate measures redundancy against current holdings AND
+  # already-kept candidates, so the shortlist stops being several names that are one trade.
+  corr_max: 0.70          # drop a candidate whose daily-return corr to a kept/held name > this
+  corr_lookback: 63       # trading days of daily returns used for the correlation (~3 months)
+  # sector_cap: 2         # opt-in: max candidates per GICS sector, counting holdings. Coarse
+                          # (GICS lumps all tech) — aggressive on a sector-concentrated book.
 
 # Per-symbol target weight of total portfolio value. Symbols NOT listed here fall back to
 # lifecycle.entry_default_weight (0.06) — i.e. treated as the small/high-growth tier by

@@ -35,6 +35,7 @@ def main() -> None:
         symbols + ["SPY", "QQQ"], data_cfg["period"], data_cfg["min_rows"]
     )
     vix = providers.fetch_vix(data_cfg["period"])
+    sectors = providers.fetch_sectors(symbols)  # for diversification-aware watchlist
 
     signals = {
         sym: scoring.build_signal(sym, df, cfg)
@@ -73,7 +74,8 @@ def main() -> None:
     if cash_low:
         # At the cash floor: rotate out a laggard to fund the strongest candidate.
         watchlist_recs = decision.rotation(
-            signals, set(holdings), weights, mkt, cfg, total_value, cash_low
+            signals, set(holdings), weights, mkt, cfg, total_value, cash_low,
+            sectors, history,
         )
     else:
         max_positions = cfg.get("lifecycle", {}).get("max_positions", 8)
@@ -82,7 +84,7 @@ def main() -> None:
         closing = {r.symbol for r in holding_recs if r.intent == "Close"}
         open_slots = max(0, max_positions - (len(holdings) - len(closing)))
         watchlist_recs = decision.scan_watchlist(
-            signals, set(holdings), mkt, cfg, open_slots, total_value
+            signals, set(holdings), mkt, cfg, open_slots, total_value, sectors, history
         )
     decision.attach_strategy_hints(holding_recs, cfg["intent_strategy_map"])
     decision.attach_strategy_hints(watchlist_recs, cfg["intent_strategy_map"])

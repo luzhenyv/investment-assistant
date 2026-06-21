@@ -5,10 +5,14 @@ yfinance returns pandas; we convert to Polars at this boundary and everything
 downstream is Polars. Canonical frame schema: date (Date) + OHLC columns."""
 from __future__ import annotations
 
+import json
+
 import polars as pl
 import yfinance as yf
 
 from quant import cache
+
+_SECTOR_CACHE = cache.CACHE_DIR / "sectors.json"
 
 
 def _to_polars(pdf, columns: list[str]) -> pl.DataFrame:
@@ -76,6 +80,46 @@ def fetch_option_chain(symbol: str, expiry: str) -> dict[tuple[str, float], floa
             if 0.01 < iv < 3.0:
                 ivs[(right, float(strike))] = iv
     return ivs
+
+
+def _download_sector(symbol: str) -> str | None:
+    """The symbol's GICS-style sector from yfinance, or None if unavailable."""
+    try:
+        return yf.Ticker(symbol).info.get("sector") or None
+    except Exception:  # noqa: BLE001 — network/parse failures are expected
+        return None
+
+
+def _read_sector_cache() -> dict[str, str]:
+    if _SECTOR_CACHE.exists():
+        try:
+            return json.loads(_SECTOR_CACHE.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def load_cached_sectors(symbols: list[str]) -> dict[str, str]:
+    """Read sectors from the on-disk cache only — no network. Used by the backtester
+    so replays are reproducible and offline. Unknown/uncached symbols => "Unknown"."""
+    cached = _read_sector_cache()
+    return {s: cached.get(s, "Unknown") for s in symbols}
+
+
+def fetch_sectors(symbols: list[str]) -> dict[str, str]:
+    """Return {symbol: sector}, backed by a persistent JSON cache at
+    `data/cache/sectors.json`. Sector is effectively static, so only symbols missing
+    from the cache are fetched; successful lookups are persisted while failures fall
+    back to "Unknown" for this run and retry next time (a transient outage never
+    poisons the cache). The on-disk file lets the backtester read sectors without any
+    network I/O, keeping replays reproducible."""
+    cached = _read_sector_cache()
+    fetched = {s: sec for s in symbols if s not in cached if (sec := _download_sector(s))}
+    if fetched:
+        cached.update(fetched)
+        _SECTOR_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _SECTOR_CACHE.write_text(json.dumps(cached, indent=2, sort_keys=True))
+    return {s: cached.get(s, "Unknown") for s in symbols}
 
 
 def fetch_vix_history(period: str) -> pl.DataFrame | None:

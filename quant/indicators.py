@@ -47,6 +47,29 @@ def trailing_return(close: pl.Series, lookback: int) -> float:
     return float(close.tail(1).item()) / past - 1.0
 
 
+def correlation(df_a: pl.DataFrame, df_b: pl.DataFrame, lookback: int) -> float:
+    """Pearson correlation of two symbols' daily returns over the trailing `lookback`
+    overlapping bars. Joins on date so frames with different start dates align; returns
+    0.0 when the overlap is too short to trust (young tickers count as uncorrelated,
+    not maximally diversifying) or either series is flat over the window."""
+    joined = (
+        df_a.select(["date", "Close"])
+        .join(df_b.select(["date", "Close"]), on="date", how="inner", suffix="_b")
+        .sort("date")
+        .tail(lookback + 1)
+    )
+    if joined.height < 21:  # need ~a month of overlap before a correlation means anything
+        return 0.0
+    rets = joined.select(
+        pl.col("Close").pct_change().alias("a"),
+        pl.col("Close_b").pct_change().alias("b"),
+    ).drop_nulls()
+    if rets.height < 2:
+        return 0.0
+    c = rets.select(pl.corr("a", "b")).item()
+    return float(c) if c is not None else 0.0
+
+
 def high_52w(high: pl.Series) -> float:
     return float(high.tail(252).max())
 
