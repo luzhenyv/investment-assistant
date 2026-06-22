@@ -5,7 +5,7 @@ import json
 from dataclasses import asdict
 
 from quant.models import (
-    Fundamentals, MarketState, OptionAnalysis, OptionPositioning, Recommendation,
+    Fundamentals, MarketState, OptionAnalysis, OptionPositioning, Recommendation, RoleView,
 )
 
 
@@ -27,11 +27,28 @@ def _valuation_line(f: Fundamentals) -> str:
     return line + " ⚠ stale" if f.stale else line
 
 
-def _rec_line(r: Recommendation, fund: Fundamentals | None = None) -> list[str]:
+def _role_line(rv: RoleView) -> str:
+    """One-line horizon-role hint, e.g.
+    `- role: swing (suggested: momentum ⚠) · weeks-months · TP $130 (+30%) / SL $90 (-10%)`"""
+    tag = rv.role if rv.source == "config" else f"{rv.role} (suggested)"
+    mismatch = "" if rv.agree else f" (suggested: {rv.suggested_role} ⚠)"
+    head = f"- role: **{tag}**{mismatch if rv.source == 'config' else ''} · {rv.horizon}"
+    if rv.tp_price is not None and rv.sl_price is not None:
+        head += (f" · TP ${rv.tp_price:,.0f} (+{rv.take_profit_pct:.0%}) / "
+                 f"SL ${rv.sl_price:,.0f} (-{rv.stop_loss_pct:.0%})")
+    return head
+
+
+def _rec_line(r: Recommendation, fund: Fundamentals | None = None,
+              rv: RoleView | None = None) -> list[str]:
     lines = [f"### {r.symbol} — **{r.intent}**", f"- {r.reason}"]
     if r.scores:
         scores = ", ".join(f"{k}={v}" for k, v in r.scores.items())
         lines.append(f"- scores: {scores}")
+    if rv is not None:
+        lines.append(_role_line(rv))
+        if rv.playbook:
+            lines.append(f"- playbook ({rv.role}): {', '.join(rv.playbook)}")
     if fund is not None:
         lines.append(_valuation_line(fund))
     if r.strategy_hint:
@@ -104,9 +121,11 @@ def render_markdown(
     summary: dict,
     fundamentals: dict[str, Fundamentals] | None = None,
     positioning: dict[str, OptionPositioning] | None = None,
+    roleviews: dict[str, RoleView] | None = None,
 ) -> str:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
+    roleviews = roleviews or {}
     out: list[str] = [f"# Weekly Investment Review — {generated_at}", ""]
 
     out.append(f"## Market: **{market.regime}**  (bull score {market.bull_score:.0f}/100)")
@@ -136,7 +155,7 @@ def render_markdown(
     out.append("## Holdings — action list")
     out.append("")
     for r in holding_recs:
-        out += _rec_line(r, fundamentals.get(r.symbol))
+        out += _rec_line(r, fundamentals.get(r.symbol), roleviews.get(r.symbol))
 
     out.append("## Options — action list")
     out.append("")
@@ -157,7 +176,7 @@ def render_markdown(
     out.append("")
     if watchlist_recs:
         for r in watchlist_recs:
-            out += _rec_line(r, fundamentals.get(r.symbol))
+            out += _rec_line(r, fundamentals.get(r.symbol), roleviews.get(r.symbol))
     else:
         out.append("_None this week (market not constructive, or no setups)._")
         out.append("")
@@ -186,12 +205,14 @@ def generate(
     summary: dict,
     fundamentals: dict[str, Fundamentals] | None = None,
     positioning: dict[str, OptionPositioning] | None = None,
+    roleviews: dict[str, RoleView] | None = None,
 ) -> None:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
+    roleviews = roleviews or {}
     md = render_markdown(
         generated_at, market, holding_recs, watchlist_recs, option_analyses, summary,
-        fundamentals, positioning,
+        fundamentals, positioning, roleviews,
     )
     with open(md_path, "w") as f:
         f.write(md)
@@ -205,6 +226,7 @@ def generate(
         "options": [asdict(a) for a in option_analyses],
         "fundamentals": {sym: asdict(f) for sym, f in fundamentals.items()},
         "positioning": {sym: asdict(p) for sym, p in positioning.items()},
+        "roles": {sym: asdict(rv) for sym, rv in roleviews.items()},
     }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)

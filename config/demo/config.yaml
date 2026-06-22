@@ -51,6 +51,46 @@ option_positioning:
   skew_warn: 0.05         # put-skew above this prints a "downside fear / dips may air-pocket" note
   rr_good: 2.0            # reward:risk at/above this reads "favourable"
 
+# Horizon roles (quant/roles.py). Report-only — does NOT feed the decision engine. Hand-set a
+# symbol's role here; unlisted names get an engine-SUGGESTED role from trend+RS+valuation.
+# Each role carries its own take-profit / stop-loss discipline + option playbook (role_rules).
+# Purpose: decide a trade's nature (long/mid/short) BEFORE entry.
+roles:                    # core | swing | momentum  (avoid is data-driven, not hand-set)
+  NVDA: core
+  MSFT: core
+  GOOG: core
+  AMZN: core
+  META: core
+  AVGO: core
+  MU: swing
+  AMD: swing
+  MRVL: swing
+  TSM: swing
+  PLTR: momentum
+  HOOD: momentum
+role_rules:
+  core_trend_min: 75      # trend score at/above which a name is "strong" for role suggestion
+  core:
+    horizon: "1y+ (compounder)"
+    take_profit: null      # no fixed target — trim only on thesis break / extreme valuation
+    stop_loss: null        # no hard stop — add on 10-20% dips while the thesis holds
+    playbook: ["Cash Secured Put to enter", "Covered Call when extended", "add on dips"]
+  swing:
+    horizon: "weeks-months (valuation repair + catalyst)"
+    take_profit: 0.30      # +30% -> scale out
+    stop_loss: 0.10        # -10% / below support -> exit
+    playbook: ["Buy shares or LEAPS near support", "exit into resistance or +30%"]
+  momentum:
+    horizon: "days-weeks (riding strength)"
+    take_profit: 0.15      # +10-20% -> take it and go
+    stop_loss: 0.08        # tight stop below support
+    playbook: ["Shares only (avoid gamma)", "trail/exit +10-20%, hard stop below support"]
+  avoid:
+    horizon: "—"
+    take_profit: null
+    stop_loss: null
+    playbook: ["Thesis broken — no new buys; close per the decision engine"]
+
 # Support/resistance zone detection (quant/levels.py). Standalone scorer — does not
 # feed the decision engine yet. Strength is fuzzy and RELATIVE to each ticker, so labels
 # come from within-ticker score quantiles, not absolute cutoffs.

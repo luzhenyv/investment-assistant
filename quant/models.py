@@ -100,6 +100,25 @@ class OptionPositioning:
 
 
 @dataclass
+class RoleView:
+    """Horizon role for one symbol + its take-profit / stop-loss discipline (see quant/roles.py).
+    Report-only hint. `role` is the hand-set config role when present, else the suggested one —
+    the point is to stop 'using long-term logic to make a short-term trade'."""
+    symbol: str
+    role: str                     # core | swing | momentum | avoid (the one in force)
+    suggested_role: str           # what trend+RS+valuation imply
+    source: str                   # "config" (hand-set) | "suggested" (no config entry)
+    agree: bool                   # config role matches the suggestion
+    horizon: str                  # human-readable hold horizon
+    take_profit_pct: float | None # None for core (trim on thesis break, not a fixed target)
+    stop_loss_pct: float | None
+    tp_price: float | None        # take_profit_pct applied to current price
+    sl_price: float | None
+    playbook: list[str] = field(default_factory=list)  # how to express this role (options etc.)
+    note: str = ""                # one-line rationale / mismatch warning
+
+
+@dataclass
 class Holding:
     symbol: str
     core: float

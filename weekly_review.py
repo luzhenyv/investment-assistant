@@ -10,8 +10,8 @@ from datetime import datetime
 import yaml
 
 from quant import (
-    decision, market, option_flow, options, portfolio, profiles, providers, report, scoring,
-    valuation,
+    decision, market, option_flow, options, portfolio, profiles, providers, report, roles,
+    scoring, valuation,
 )
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -159,6 +159,13 @@ def main() -> None:
                 positioning[sym] = p
         print(f"  option positioning: {len(positioning)}/{len(actionable)} chains analysed")
 
+    # Horizon roles (report-only) for the actionable set: core / swing / momentum + TP/SL.
+    roleviews = {}
+    if cfg.get("role_rules"):
+        for sym in {r.symbol for r in holding_recs} | {r.symbol for r in watchlist_recs}:
+            if sym in signals:
+                roleviews[sym] = roles.build(sym, signals[sym], fundamentals.get(sym), cfg)
+
     os.makedirs(OUT_DIR, exist_ok=True)
     now = datetime.now()
     generated_at = now.strftime("%Y-%m-%d %H:%M:%S")  # in-file header + JSON field
@@ -176,6 +183,7 @@ def main() -> None:
         summary,
         fundamentals,
         positioning,
+        roleviews,
     )
     print(f"Report written to {md_path}")
 
