@@ -9,7 +9,7 @@ from datetime import datetime
 
 import yaml
 
-from quant import decision, market, options, portfolio, profiles, providers, report, scoring
+from quant import decision, market, options, portfolio, profiles, providers, report, scoring, valuation
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG, PORTFOLIO, WATCHLIST, OPTIONS, OUT_DIR = profiles.resolve(ROOT)
@@ -36,6 +36,7 @@ def main() -> None:
     )
     vix = providers.fetch_vix(data_cfg["period"])
     sectors = providers.fetch_sectors(symbols)  # for diversification-aware watchlist
+    raw_fund = providers.fetch_fundamentals(symbols, cfg)  # report-only valuation hints
 
     signals = {
         sym: scoring.build_signal(sym, df, cfg)
@@ -47,6 +48,12 @@ def main() -> None:
     spy = scoring.build_signal("SPY", history["SPY"], cfg)
     qqq = scoring.build_signal("QQQ", history["QQQ"], cfg)
     mkt = market.detect_market(spy, qqq, vix)
+
+    fundamentals = {
+        sym: valuation.build(sym, raw, signals[sym].price, cfg, stale=raw.get("_stale", False))
+        for sym, raw in raw_fund.items()
+        if raw and sym in signals
+    }
 
     prices = {sym: s.price for sym, s in signals.items()}
     total_value = portfolio.portfolio_value(cash, holdings, prices)
@@ -152,6 +159,7 @@ def main() -> None:
         watchlist_recs,
         option_analyses,
         summary,
+        fundamentals,
     )
     print(f"Report written to {md_path}")
 

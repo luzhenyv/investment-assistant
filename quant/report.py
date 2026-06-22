@@ -4,14 +4,34 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
-from quant.models import MarketState, OptionAnalysis, Recommendation
+from quant.models import Fundamentals, MarketState, OptionAnalysis, Recommendation
 
 
-def _rec_line(r: Recommendation) -> list[str]:
+def _valuation_line(f: Fundamentals) -> str:
+    """One-line valuation hint, e.g.
+    `- valuation: PE 53.5 (fwd 10.5), PEG 0.36 · target $946 (+9%) · cheap (growth-justified) ⚠ stale`"""
+    parts: list[str] = []
+    if f.pe is not None:
+        parts.append(f"PE {f.pe:.1f}" + (f" (fwd {f.forward_pe:.1f})" if f.forward_pe is not None else ""))
+    elif f.forward_pe is not None:
+        parts.append(f"fwd PE {f.forward_pe:.1f}")
+    if f.peg is not None:
+        parts.append(f"PEG {f.peg:.2f}")
+    if f.analyst_target is not None:
+        up = f" ({f.upside_to_target:+.0%})" if f.upside_to_target is not None else ""
+        parts.append(f"target ${f.analyst_target:,.0f}{up}")
+    parts.append(f.valuation_label)
+    line = "- valuation: " + " · ".join(parts)
+    return line + " ⚠ stale" if f.stale else line
+
+
+def _rec_line(r: Recommendation, fund: Fundamentals | None = None) -> list[str]:
     lines = [f"### {r.symbol} — **{r.intent}**", f"- {r.reason}"]
     if r.scores:
         scores = ", ".join(f"{k}={v}" for k, v in r.scores.items())
         lines.append(f"- scores: {scores}")
+    if fund is not None:
+        lines.append(_valuation_line(fund))
     if r.strategy_hint:
         lines.append(f"- ways to express: {', '.join(r.strategy_hint)}")
     lines.append("")
@@ -53,7 +73,9 @@ def render_markdown(
     watchlist_recs: list[Recommendation],
     option_analyses: list[OptionAnalysis],
     summary: dict,
+    fundamentals: dict[str, Fundamentals] | None = None,
 ) -> str:
+    fundamentals = fundamentals or {}
     out: list[str] = [f"# Weekly Investment Review — {generated_at}", ""]
 
     out.append(f"## Market: **{market.regime}**  (bull score {market.bull_score:.0f}/100)")
@@ -83,7 +105,7 @@ def render_markdown(
     out.append("## Holdings — action list")
     out.append("")
     for r in holding_recs:
-        out += _rec_line(r)
+        out += _rec_line(r, fundamentals.get(r.symbol))
 
     out.append("## Options — action list")
     out.append("")
@@ -98,7 +120,7 @@ def render_markdown(
     out.append("")
     if watchlist_recs:
         for r in watchlist_recs:
-            out += _rec_line(r)
+            out += _rec_line(r, fundamentals.get(r.symbol))
     else:
         out.append("_None this week (market not constructive, or no setups)._")
         out.append("")
@@ -107,6 +129,9 @@ def render_markdown(
     out.append("_Intents are intentions, not trades. You choose strikes and sizing._")
     out.append("_Option P&L is an intrinsic-only floor (no time value); confirm marks with your broker._")
     out.append("_Greeks are Black-Scholes from live implied vol (q=0); deep-ITM IV can be unreliable._")
+    if fundamentals:
+        out.append("_Valuation hints are from Alpha Vantage: trailing GAAP PE can mislead for cyclicals "
+                   "(watch forward PE); analyst target is lagging consensus._")
     return "\n".join(out)
 
 
@@ -119,9 +144,11 @@ def generate(
     watchlist_recs: list[Recommendation],
     option_analyses: list[OptionAnalysis],
     summary: dict,
+    fundamentals: dict[str, Fundamentals] | None = None,
 ) -> None:
+    fundamentals = fundamentals or {}
     md = render_markdown(
-        generated_at, market, holding_recs, watchlist_recs, option_analyses, summary
+        generated_at, market, holding_recs, watchlist_recs, option_analyses, summary, fundamentals
     )
     with open(md_path, "w") as f:
         f.write(md)
@@ -133,6 +160,7 @@ def generate(
         "holdings": [asdict(r) for r in holding_recs],
         "watchlist": [asdict(r) for r in watchlist_recs],
         "options": [asdict(a) for a in option_analyses],
+        "fundamentals": {sym: asdict(f) for sym, f in fundamentals.items()},
     }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)

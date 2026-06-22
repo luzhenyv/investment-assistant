@@ -5,7 +5,10 @@ yfinance returns pandas; we convert to Polars at this boundary and everything
 downstream is Polars. Canonical frame schema: date (Date) + OHLCV columns."""
 from __future__ import annotations
 
+import datetime as dt
 import json
+import os
+import urllib.request
 
 import polars as pl
 import yfinance as yf
@@ -13,6 +16,14 @@ import yfinance as yf
 from quant import cache
 
 _SECTOR_CACHE = cache.CACHE_DIR / "sectors.json"
+_FUNDAMENTALS_CACHE = cache.CACHE_DIR / "fundamentals.json"
+_AV_URL = "https://www.alphavantage.co/query?function=OVERVIEW&symbol={sym}&apikey={key}"
+# AV OVERVIEW fields we keep (everything else is dropped to keep the cache small).
+_AV_FIELDS = (
+    "Sector", "PERatio", "ForwardPE", "PEGRatio", "PriceToBookRatio", "EVToEBITDA",
+    "ProfitMargin", "QuarterlyRevenueGrowthYOY", "QuarterlyEarningsGrowthYOY",
+    "AnalystTargetPrice", "Beta",
+)
 
 
 def _to_polars(pdf, columns: list[str]) -> pl.DataFrame:
@@ -120,6 +131,99 @@ def fetch_sectors(symbols: list[str]) -> dict[str, str]:
         _SECTOR_CACHE.parent.mkdir(parents=True, exist_ok=True)
         _SECTOR_CACHE.write_text(json.dumps(cached, indent=2, sort_keys=True))
     return {s: cached.get(s, "Unknown") for s in symbols}
+
+
+def _read_fundamentals_cache() -> dict[str, dict]:
+    if _FUNDAMENTALS_CACHE.exists():
+        try:
+            return json.loads(_FUNDAMENTALS_CACHE.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _download_overview(symbol: str, key: str) -> dict | None:
+    """One Alpha Vantage OVERVIEW call. Returns the trimmed field dict, or None on
+    failure / throttle / premium notice ("Information"/"Note"/"Error Message" keys)."""
+    try:
+        with urllib.request.urlopen(_AV_URL.format(sym=symbol, key=key), timeout=15) as resp:
+            data = json.loads(resp.read())
+    except Exception:  # noqa: BLE001 — network/parse failures are expected
+        return None
+    if not isinstance(data, dict) or not data.get("Symbol"):
+        return None  # throttle/premium/empty -> no usable fundamentals
+    return {f: data.get(f) for f in _AV_FIELDS}
+
+
+def fetch_fundamentals(symbols: list[str], cfg: dict) -> dict[str, dict | None]:
+    """Return {symbol: OVERVIEW-field dict (+ "_fetched"/"_stale") or None}, backed by a
+    persistent JSON cache at `data/cache/fundamentals.json`.
+
+    Fundamentals move quarterly, so a symbol is refetched only when its cached copy is
+    older than `fundamentals.refresh_days`. Live calls are capped at
+    `fundamentals.max_api_calls_per_run` to respect the free 25/day budget; on the first
+    AV failure/throttle we stop calling for the rest of the run and serve stale cache.
+    Disabled (returns all-None) when `fundamentals.enabled` is false or the
+    ALPHAVANTAGE_API_KEY env var is unset."""
+    fund = cfg.get("fundamentals", {})
+    out: dict[str, dict | None] = {s: None for s in symbols}
+    if not fund.get("enabled", False):
+        return out
+    key = os.environ.get("ALPHAVANTAGE_API_KEY")
+    if not key:
+        print("  ! fundamentals enabled but ALPHAVANTAGE_API_KEY unset — skipping")
+        return out
+
+    refresh_days = fund.get("refresh_days", 7)
+    budget = fund.get("max_api_calls_per_run", 20)
+    today = dt.date.today()
+    cached = _read_fundamentals_cache()
+    calls = 0
+    stop = False
+    dirty = False
+
+    for sym in symbols:
+        entry = cached.get(sym)
+        fresh_enough = False
+        if entry:
+            try:
+                age = (today - dt.date.fromisoformat(entry["fetched"])).days
+                fresh_enough = age < refresh_days
+            except (KeyError, ValueError):
+                fresh_enough = False
+        if entry and (fresh_enough or stop or calls >= budget):
+            out[sym] = {**entry["raw"], "_fetched": entry["fetched"], "_stale": not fresh_enough}
+            continue
+        if stop or calls >= budget:
+            continue  # no cache and no budget — leave None
+        calls += 1
+        raw = _download_overview(sym, key)
+        if raw is None:
+            stop = True  # throttled/premium — don't burn the rest of the budget
+            if entry:  # serve stale if we have anything
+                out[sym] = {**entry["raw"], "_fetched": entry["fetched"], "_stale": True}
+            continue
+        fetched = today.isoformat()
+        cached[sym] = {"raw": raw, "fetched": fetched}
+        dirty = True
+        out[sym] = {**raw, "_fetched": fetched, "_stale": False}
+
+    if dirty:
+        _FUNDAMENTALS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _FUNDAMENTALS_CACHE.write_text(json.dumps(cached, indent=2, sort_keys=True))
+    if calls:
+        print(f"  fundamentals: {calls} Alpha Vantage call(s) this run")
+    return out
+
+
+def load_cached_fundamentals(symbols: list[str]) -> dict[str, dict | None]:
+    """Read fundamentals from the on-disk cache only — no network (parity with
+    load_cached_sectors). Unknown/uncached symbols => None."""
+    cached = _read_fundamentals_cache()
+    return {
+        s: ({**cached[s]["raw"], "_fetched": cached[s]["fetched"], "_stale": True} if s in cached else None)
+        for s in symbols
+    }
 
 
 def fetch_vix_history(period: str) -> pl.DataFrame | None:

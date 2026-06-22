@@ -26,6 +26,17 @@ scoring:
   accel_rsi: 62           # trend>=75 + (breakout or RSI>=this) => Trend Acceleration
   rs_lookback: 126        # trailing-return window for relative strength (~6 months)
 
+# Fundamentals / valuation hints (quant/valuation.py). Report-only — does NOT feed the
+# decision engine or backtest. Source: free Alpha Vantage OVERVIEW (PE/PEG/analyst target).
+# Needs env var ALPHAVANTAGE_API_KEY; disabled (no-op) if unset. Free tier is 25 calls/day,
+# so fundamentals are cached and a symbol is refetched only when its cache goes stale.
+fundamentals:
+  enabled: true
+  refresh_days: 7         # refetch a symbol only when its cached copy is older than this
+  max_api_calls_per_run: 20  # hard cap per run (headroom under the free 25/day limit)
+  peg_cheap: 1.0          # PEG <= this => "cheap (growth-justified)"
+  peg_rich: 2.0           # PEG >  this => "rich"; in between => "fair"
+
 # Support/resistance zone detection (quant/levels.py). Standalone scorer — does not
 # feed the decision engine yet. Strength is fuzzy and RELATIVE to each ticker, so labels
 # come from within-ticker score quantiles, not absolute cutoffs.

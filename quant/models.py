@@ -51,6 +51,29 @@ class Zone:
 
 
 @dataclass
+class Fundamentals:
+    """Valuation/fundamentals snapshot from Alpha Vantage OVERVIEW (see quant/valuation.py).
+    Report-only hints — never feeds scoring/decision. Any field may be None when the
+    vendor omits it. Prices/levels are deliberately NOT taken from here (Signal owns those)."""
+    symbol: str
+    sector: str | None
+    pe: float | None              # trailing GAAP P/E (can mislead for cyclicals)
+    forward_pe: float | None      # forward P/E (fwd << trailing => earnings ramping)
+    peg: float | None             # P/E-to-growth (the growth-adjusted read)
+    pb: float | None              # price/book
+    ev_ebitda: float | None
+    profit_margin: float | None
+    rev_growth: float | None      # quarterly revenue growth YoY
+    eps_growth: float | None      # quarterly earnings growth YoY
+    analyst_target: float | None  # consensus target price (lagging) — a coarse upper bound
+    beta: float | None
+    upside_to_target: float | None  # (analyst_target - price)/price
+    valuation_label: str          # cheap (growth-justified) | fair | rich | unknown
+    as_of: str                    # ISO date the OVERVIEW was fetched
+    stale: bool = False           # served from a cache older than refresh_days
+
+
+@dataclass
 class Holding:
     symbol: str
     core: float
