@@ -2,7 +2,7 @@
 run survives a flaky download by reusing local data. Network I/O lives only here.
 
 yfinance returns pandas; we convert to Polars at this boundary and everything
-downstream is Polars. Canonical frame schema: date (Date) + OHLC columns."""
+downstream is Polars. Canonical frame schema: date (Date) + OHLCV columns."""
 from __future__ import annotations
 
 import json
@@ -31,7 +31,7 @@ def _download_history(symbol: str, period: str) -> pl.DataFrame | None:
     pdf = yf.Ticker(symbol).history(period=period, auto_adjust=True)
     if pdf.empty:
         return None
-    return _to_polars(pdf, ["Open", "High", "Low", "Close"])
+    return _to_polars(pdf, ["Open", "High", "Low", "Close", "Volume"])
 
 
 def _download_vix(period: str) -> pl.DataFrame | None:

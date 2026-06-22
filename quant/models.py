@@ -33,6 +33,24 @@ class Signal:
 
 
 @dataclass
+class Zone:
+    """A scored support/resistance price band (see quant/levels.py)."""
+    low: float                  # band lower bound (price)
+    high: float                 # band upper bound (price)
+    score: float                # raw aggregated strength (pre-normalization)
+    label: str                  # small | medium | strong | super-strong
+    kind: str                   # support | resistance (relative to current price)
+    touches: int                # total touch count across merged members
+    methods: list[str] = field(default_factory=list)     # distinct sources, e.g. ["fib","swing","volume"]
+    timeframes: list[str] = field(default_factory=list)  # ["weekly","daily"]
+    members: int = 1            # candidates merged into this zone (confluence proxy)
+
+    @property
+    def mid(self) -> float:
+        return (self.low + self.high) / 2.0
+
+
+@dataclass
 class Holding:
     symbol: str
     core: float

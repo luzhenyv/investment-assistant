@@ -26,6 +26,59 @@ scoring:
   accel_rsi: 62           # trend>=75 + (breakout or RSI>=this) => Trend Acceleration
   rs_lookback: 126        # trailing-return window for relative strength (~6 months)
 
+# Support/resistance zone detection (quant/levels.py). Standalone scorer — does not
+# feed the decision engine yet. Strength is fuzzy and RELATIVE to each ticker, so labels
+# come from within-ticker score quantiles, not absolute cutoffs.
+levels:
+  pivot_k: 5              # fractal half-window: a swing high/low is the extreme of 2k+1 bars
+  lookback_bars: 1000     # ~4y of daily structure (weekly uses lookback/5); the trader
+                          # reads multi-year weekly structure, so reach back far enough
+  price_floor_frac: 0.4   # ignore candidates below this fraction of current price ...
+  price_ceiling_frac: 1.35 # ... or above this fraction. Bounds S/R to the actionable
+                          # range a trader actually charts (not the ancient pre-growth base).
+  box_win: 8              # window length (bars) for consolidation/range detection
+  box_pct: 0.06           # a window is a "box" when its high-low range < this % of mean price
+  fib_ratios: [0.236, 0.382, 0.5, 0.618, 0.786]
+  cluster_pct: 0.02       # zone-merge tolerance as % of price ...
+  cluster_atr_mult: 0.5   # ... or this many ATRs; effective tol = max(the two). Also touch tol.
+                          # Kept modest so volatile names (semis) don't collapse distinct zones.
+  max_zone_frac: 0.08     # hard cap on a zone's price span (% of price) — stops dense regions
+                          # from chaining into one over-wide zone; keeps bands trader-tight.
+  touch_cap: 5            # diminishing returns: touches beyond this don't add score
+  confluence_bonus: 0.35  # per EXTRA distinct method in a zone (fib+swing+volume+... stacking)
+  count_damp: 0.5         # divide a zone's summed score by members**count_damp. Near-price
+                          # regions pile up candidates of every method; without damping the
+                          # score ranks activity density rather than structural strength.
+  # Confluence filter — driven by the out-of-sample edge test (scripts/level_edge.py), which
+  # found a zone's reversal edge is monotonic in distinct-method count: 1-method zones reverse
+  # LESS than a random level, only >=3-method zones beat it.
+  min_methods: 2          # drop zones backed by fewer than this many distinct methods (noise)
+  strong_min_methods: 3   # only >=3-method zones may earn strong / super-strong labels
+  volume_bins: 40         # price buckets for volume-by-price nodes
+  volume_node_mult: 1.3   # a bucket is a high-volume node when its volume > this * mean bucket
+  vwap_anchors: 3         # number of major swing lows to anchor VWAP from (bullish dynamic support)
+  weights:                # per-candidate score term weights
+    kind: 1.0             # structural point (1.0) vs range band (0.6)
+    duration: 2.5         # log1p(duration_days) — TIME PRIORITY, the lecture's #1 driver:
+                          # long consolidations / major bases must outrank recent clusters
+    touch: 0.8            # capped touch count
+    reaction: 0.6         # bounce magnitude in ATRs (swing pivots)
+    volume: 2.0           # volume-at-price ratio — conviction (lecture #4); deep high-volume
+                          # bases are the trader's "super-strong" zones
+    method: 1.0           # method_prior below
+  method_prior:           # macro/structural > micro (lecture ordering)
+    fib: 1.0
+    swing: 1.0
+    vwap: 0.9             # anchored VWAP (from major swing lows) — real-flow level institutions defend
+    box: 0.8
+    volume: 0.9
+    ma: 0.5
+    round: 0.4
+  label_quantiles:        # within-ticker score quantile cuts -> ordinal label
+    super_strong: 0.90
+    strong: 0.65
+    medium: 0.30
+
 # Watchlist→holdings lifecycle + state-aware sizing.
 lifecycle:
   accel_extra_steps: 1    # Trend Acceleration may take this many extra scale-in steps
