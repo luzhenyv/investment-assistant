@@ -18,12 +18,6 @@ from quant import cache
 _SECTOR_CACHE = cache.CACHE_DIR / "sectors.json"
 _FUNDAMENTALS_CACHE = cache.CACHE_DIR / "fundamentals.json"
 _AV_URL = "https://www.alphavantage.co/query?function=OVERVIEW&symbol={sym}&apikey={key}"
-# AV OVERVIEW fields we keep (everything else is dropped to keep the cache small).
-_AV_FIELDS = (
-    "Sector", "PERatio", "ForwardPE", "PEGRatio", "PriceToBookRatio", "EVToEBITDA",
-    "ProfitMargin", "QuarterlyRevenueGrowthYOY", "QuarterlyEarningsGrowthYOY",
-    "AnalystTargetPrice", "Beta",
-)
 
 
 def _to_polars(pdf, columns: list[str]) -> pl.DataFrame:
@@ -216,77 +210,143 @@ def _read_fundamentals_cache() -> dict[str, dict]:
     return {}
 
 
-def _download_overview(symbol: str, key: str) -> dict | None:
-    """One Alpha Vantage OVERVIEW call. Returns the trimmed field dict, or None on
-    failure / throttle / premium notice ("Information"/"Note"/"Error Message" keys)."""
+# --- Fundamentals: pluggable sources normalised to a vendor-neutral canonical dict ----- #
+# Canonical keys every source maps to (what valuation.py reads).
+_FUND_KEYS = (
+    "sector", "pe", "forward_pe", "peg", "pb", "ev_ebitda", "profit_margin",
+    "rev_growth", "eps_growth", "analyst_target", "beta",
+)
+_YF_MAP = {  # canonical -> yfinance .info key (peg handled separately, has a fallback)
+    "sector": "sector", "pe": "trailingPE", "forward_pe": "forwardPE",
+    "pb": "priceToBook", "ev_ebitda": "enterpriseToEbitda", "profit_margin": "profitMargins",
+    "rev_growth": "revenueGrowth", "eps_growth": "earningsQuarterlyGrowth",
+    "analyst_target": "targetMeanPrice", "beta": "beta",
+}
+_AV_MAP = {  # canonical -> Alpha Vantage OVERVIEW key
+    "sector": "Sector", "pe": "PERatio", "forward_pe": "ForwardPE", "peg": "PEGRatio",
+    "pb": "PriceToBookRatio", "ev_ebitda": "EVToEBITDA", "profit_margin": "ProfitMargin",
+    "rev_growth": "QuarterlyRevenueGrowthYOY", "eps_growth": "QuarterlyEarningsGrowthYOY",
+    "analyst_target": "AnalystTargetPrice", "beta": "Beta",
+}
+
+
+def _map_yf_info(info: dict) -> dict:
+    """yfinance `.info` -> canonical fundamentals dict (native floats/None preserved)."""
+    out = {ck: info.get(yk) for ck, yk in _YF_MAP.items()}
+    out["peg"] = info.get("trailingPegRatio", info.get("pegRatio"))
+    return out
+
+
+def _map_av_overview(data: dict) -> dict:
+    """Alpha Vantage OVERVIEW -> canonical fundamentals dict (values stay AV strings)."""
+    return {ck: data.get(ak) for ck, ak in _AV_MAP.items()}
+
+
+def _fund_from_yfinance(symbol: str) -> dict | None:
+    """Canonical fundamentals from yfinance `.info`. None on failure / empty."""
+    try:
+        info = yf.Ticker(symbol).info
+    except Exception:  # noqa: BLE001 — network/parse failures are expected
+        return None
+    if not info:
+        return None
+    mapped = _map_yf_info(info)
+    return mapped if any(v is not None for v in mapped.values()) else None
+
+
+def _fund_from_alphavantage(symbol: str, key: str) -> dict | None:
+    """Canonical fundamentals from one Alpha Vantage OVERVIEW call. None on failure /
+    throttle / premium notice (response then lacks a real "Symbol")."""
     try:
         with urllib.request.urlopen(_AV_URL.format(sym=symbol, key=key), timeout=15) as resp:
             data = json.loads(resp.read())
     except Exception:  # noqa: BLE001 — network/parse failures are expected
         return None
     if not isinstance(data, dict) or not data.get("Symbol"):
-        return None  # throttle/premium/empty -> no usable fundamentals
-    return {f: data.get(f) for f in _AV_FIELDS}
+        return None
+    return _map_av_overview(data)
+
+
+# Source registry — add a broker / Finviz / etc. source here with its own mapper.
+_FUND_SOURCES = {
+    "yfinance": {"fetch": _fund_from_yfinance, "needs_key": False},
+    "alphavantage": {"fetch": _fund_from_alphavantage, "needs_key": True},
+}
 
 
 def fetch_fundamentals(symbols: list[str], cfg: dict) -> dict[str, dict | None]:
-    """Return {symbol: OVERVIEW-field dict (+ "_fetched"/"_stale") or None}, backed by a
-    persistent JSON cache at `data/cache/fundamentals.json`.
+    """Return {symbol: canonical fundamentals dict (+ "_fetched"/"_stale"/"_source") or None},
+    backed by a persistent JSON cache at `data/cache/fundamentals.json`.
 
-    Fundamentals move quarterly, so a symbol is refetched only when its cached copy is
-    older than `fundamentals.refresh_days`. Live calls are capped at
-    `fundamentals.max_api_calls_per_run` to respect the free 25/day budget; on the first
-    AV failure/throttle we stop calling for the rest of the run and serve stale cache.
-    Disabled (returns all-None) when `fundamentals.enabled` is false or the
-    ALPHAVANTAGE_API_KEY env var is unset."""
+    Source is `fundamentals.source` (default "yfinance"); see `_FUND_SOURCES`. Fundamentals
+    move quarterly, so a symbol is refetched only when its cached copy is older than
+    `fundamentals.refresh_days` OR was fetched from a different source. `max_api_calls_per_run`
+    caps live calls (mainly the Alpha Vantage 25/day guard; absent/0 => no cap). A keyed source
+    (Alpha Vantage) requires ALPHAVANTAGE_API_KEY and stops the run on the first failure to
+    avoid burning the budget on a throttle; keyless sources (yfinance) skip a failed symbol and
+    continue. Disabled (all-None) when `fundamentals.enabled` is false."""
     fund = cfg.get("fundamentals", {})
     out: dict[str, dict | None] = {s: None for s in symbols}
     if not fund.get("enabled", False):
         return out
-    key = os.environ.get("ALPHAVANTAGE_API_KEY")
-    if not key:
-        print("  ! fundamentals enabled but ALPHAVANTAGE_API_KEY unset — skipping")
+    source = fund.get("source", "yfinance")
+    spec = _FUND_SOURCES.get(source)
+    if spec is None:
+        print(f"  ! unknown fundamentals.source {source!r} — skipping")
         return out
+    key = None
+    if spec["needs_key"]:
+        key = os.environ.get("ALPHAVANTAGE_API_KEY")
+        if not key:
+            print(f"  ! fundamentals source '{source}' needs ALPHAVANTAGE_API_KEY (unset) — skipping")
+            return out
 
     refresh_days = fund.get("refresh_days", 7)
-    budget = fund.get("max_api_calls_per_run", 20)
+    budget = fund.get("max_api_calls_per_run") or None  # 0/absent => no cap
+    stop_on_fail = spec["needs_key"]                    # AV throttle guard only
     today = dt.date.today()
     cached = _read_fundamentals_cache()
     calls = 0
     stop = False
     dirty = False
 
+    def _serve(entry, stale):
+        return {**entry["raw"], "_fetched": entry["fetched"], "_stale": stale, "_source": source}
+
     for sym in symbols:
         entry = cached.get(sym)
+        if entry and entry.get("source") != source:
+            entry = None  # different source -> refetch so a source switch self-heals
         fresh_enough = False
         if entry:
             try:
-                age = (today - dt.date.fromisoformat(entry["fetched"])).days
-                fresh_enough = age < refresh_days
+                fresh_enough = (today - dt.date.fromisoformat(entry["fetched"])).days < refresh_days
             except (KeyError, ValueError):
                 fresh_enough = False
-        if entry and (fresh_enough or stop or calls >= budget):
-            out[sym] = {**entry["raw"], "_fetched": entry["fetched"], "_stale": not fresh_enough}
+        capped = budget is not None and calls >= budget
+        if entry and (fresh_enough or stop or capped):
+            out[sym] = _serve(entry, stale=not fresh_enough)
             continue
-        if stop or calls >= budget:
-            continue  # no cache and no budget — leave None
+        if stop or capped:
+            continue  # no usable cache and no budget — leave None
         calls += 1
-        raw = _download_overview(sym, key)
+        raw = spec["fetch"](sym, key) if spec["needs_key"] else spec["fetch"](sym)
         if raw is None:
-            stop = True  # throttled/premium — don't burn the rest of the budget
-            if entry:  # serve stale if we have anything
-                out[sym] = {**entry["raw"], "_fetched": entry["fetched"], "_stale": True}
+            if stop_on_fail:
+                stop = True
+            if entry:
+                out[sym] = _serve(entry, stale=True)
             continue
         fetched = today.isoformat()
-        cached[sym] = {"raw": raw, "fetched": fetched}
+        cached[sym] = {"raw": raw, "fetched": fetched, "source": source}
         dirty = True
-        out[sym] = {**raw, "_fetched": fetched, "_stale": False}
+        out[sym] = {**raw, "_fetched": fetched, "_stale": False, "_source": source}
 
     if dirty:
         _FUNDAMENTALS_CACHE.parent.mkdir(parents=True, exist_ok=True)
         _FUNDAMENTALS_CACHE.write_text(json.dumps(cached, indent=2, sort_keys=True))
     if calls:
-        print(f"  fundamentals: {calls} Alpha Vantage call(s) this run")
+        print(f"  fundamentals: {calls} {source} call(s) this run")
     return out
 
 
@@ -295,7 +355,8 @@ def load_cached_fundamentals(symbols: list[str]) -> dict[str, dict | None]:
     load_cached_sectors). Unknown/uncached symbols => None."""
     cached = _read_fundamentals_cache()
     return {
-        s: ({**cached[s]["raw"], "_fetched": cached[s]["fetched"], "_stale": True} if s in cached else None)
+        s: ({**cached[s]["raw"], "_fetched": cached[s]["fetched"], "_stale": True,
+             "_source": cached[s].get("source", "")} if s in cached else None)
         for s in symbols
     }
 

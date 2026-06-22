@@ -33,27 +33,32 @@ def test_label_ramp_without_peg_is_fair_not_unknown():
     assert label == "fair · fwd PE ≪ trailing"
 
 
-def test_build_computes_upside_and_fields():
+def test_build_from_canonical_native_floats():
+    # yfinance-style canonical dict (native floats / None)
     raw = {
-        "Sector": "TECHNOLOGY", "PERatio": "53.46", "ForwardPE": "10.53",
-        "PEGRatio": "0.357", "PriceToBookRatio": "17.65", "EVToEBITDA": "34.41",
-        "ProfitMargin": "0.415", "QuarterlyRevenueGrowthYOY": "1.963",
-        "QuarterlyEarningsGrowthYOY": "7.56", "AnalystTargetPrice": "945.6",
-        "Beta": "2.173", "_fetched": "2026-06-22",
+        "sector": "Technology", "pe": 53.46, "forward_pe": 10.53, "peg": 0.357,
+        "pb": 17.65, "ev_ebitda": 34.41, "profit_margin": 0.415, "rev_growth": 1.963,
+        "eps_growth": 7.56, "analyst_target": 945.6, "beta": 2.173, "_fetched": "2026-06-22",
     }
     f = valuation.build("MU", raw, price=865.0, cfg=CFG, stale=False)
-    assert f.symbol == "MU"
-    assert f.sector == "TECHNOLOGY"
+    assert f.symbol == "MU" and f.sector == "Technology"
     assert f.pe == 53.46 and f.forward_pe == 10.53 and f.peg == 0.357
     assert f.analyst_target == 945.6
     assert abs(f.upside_to_target - (945.6 - 865.0) / 865.0) < 1e-9
     assert f.valuation_label.startswith("cheap (growth-justified)")
-    assert f.as_of == "2026-06-22"
-    assert f.stale is False
+    assert f.as_of == "2026-06-22" and f.stale is False
+
+
+def test_build_from_canonical_av_strings():
+    # Alpha Vantage-style canonical dict (string values) parses identically
+    raw = {"sector": "TECHNOLOGY", "pe": "53.46", "forward_pe": "10.53", "peg": "0.357",
+           "analyst_target": "945.6"}
+    f = valuation.build("MU", raw, price=865.0, cfg=CFG)
+    assert f.pe == 53.46 and f.peg == 0.357 and f.analyst_target == 945.6
 
 
 def test_build_handles_missing_target_and_ratios():
-    raw = {"Sector": "TECHNOLOGY", "PERatio": "None", "AnalystTargetPrice": "-"}
+    raw = {"sector": "TECHNOLOGY", "pe": None, "analyst_target": "-"}
     f = valuation.build("X", raw, price=100.0, cfg=CFG)
     assert f.pe is None
     assert f.analyst_target is None

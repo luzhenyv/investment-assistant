@@ -27,13 +27,15 @@ scoring:
   rs_lookback: 126        # trailing-return window for relative strength (~6 months)
 
 # Fundamentals / valuation hints (quant/valuation.py). Report-only — does NOT feed the
-# decision engine or backtest. Source: free Alpha Vantage OVERVIEW (PE/PEG/analyst target).
-# Needs env var ALPHAVANTAGE_API_KEY; disabled (no-op) if unset. Free tier is 25 calls/day,
-# so fundamentals are cached and a symbol is refetched only when its cache goes stale.
+# decision engine or backtest. PE/PEG/analyst target normalised to a vendor-neutral schema, so
+# the source is pluggable (more coming: broker, finviz, ...). `source: yfinance` (default) needs
+# no API key; `source: alphavantage` needs env var ALPHAVANTAGE_API_KEY and the free 25/day budget.
+# Fundamentals are cached and refetched only when stale (or the source changes).
 fundamentals:
   enabled: true
+  source: yfinance        # yfinance (default, keyless) | alphavantage (needs key, 25/day)
   refresh_days: 7         # refetch a symbol only when its cached copy is older than this
-  max_api_calls_per_run: 20  # hard cap per run (headroom under the free 25/day limit)
+  max_api_calls_per_run: 20  # per-run call cap (mainly the Alpha Vantage 25/day guard; 0 = none)
   peg_cheap: 1.0          # PEG <= this => "cheap (growth-justified)"
   peg_rich: 2.0           # PEG >  this => "rich"; in between => "fair"
 
