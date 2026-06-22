@@ -9,7 +9,10 @@ from datetime import datetime
 
 import yaml
 
-from quant import decision, market, options, portfolio, profiles, providers, report, scoring, valuation
+from quant import (
+    decision, market, option_flow, options, portfolio, profiles, providers, report, scoring,
+    valuation,
+)
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG, PORTFOLIO, WATCHLIST, OPTIONS, OUT_DIR = profiles.resolve(ROOT)
@@ -144,6 +147,18 @@ def main() -> None:
             options.analyze(s, signals[s.underlying].price, datetime.now().date(), ivs, r)
         )
 
+    # Option-chain positioning (report-only) for the actionable set: held + watchlist names.
+    positioning = {}
+    if cfg.get("option_positioning", {}).get("enabled", False):
+        actionable = {r.symbol for r in holding_recs} | {r.symbol for r in watchlist_recs}
+        for sym in sorted(actionable):
+            if sym not in signals or sym not in history:
+                continue
+            p = option_flow.analyze(sym, signals[sym].price, history[sym], cfg)
+            if p is not None:
+                positioning[sym] = p
+        print(f"  option positioning: {len(positioning)}/{len(actionable)} chains analysed")
+
     os.makedirs(OUT_DIR, exist_ok=True)
     now = datetime.now()
     generated_at = now.strftime("%Y-%m-%d %H:%M:%S")  # in-file header + JSON field
@@ -160,6 +175,7 @@ def main() -> None:
         option_analyses,
         summary,
         fundamentals,
+        positioning,
     )
     print(f"Report written to {md_path}")
 

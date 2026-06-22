@@ -37,6 +37,20 @@ fundamentals:
   peg_cheap: 1.0          # PEG <= this => "cheap (growth-justified)"
   peg_rich: 2.0           # PEG >  this => "rich"; in between => "fair"
 
+# Option-chain positioning hints (quant/option_flow.py). Report-only — does NOT feed the
+# decision engine or backtest. Source: free yfinance chain (OI/volume/IV). Computes put/call
+# walls, max pain, expected move, IV skew, and reward:risk odds, cross-referenced with the
+# levels.py S/R zones. (Alpha Vantage options are premium-only, so yfinance is the source.)
+option_positioning:
+  enabled: true           # live yfinance chain fetch per held/watchlist name (~2 calls each)
+  dte_lo: 25              # target the 3rd-Friday monthly with days-to-expiry in this range
+  dte_hi: 45              # (most liquid; best signal for a weekly-cadence investor)
+  band_floor: 0.70        # ignore strikes below this fraction of spot ...
+  band_high: 1.30         # ... or above this — keep walls/max-pain near the actionable range
+  skew_pct: 0.10          # OTM offset for the put-IV vs call-IV skew (±10% from spot)
+  skew_warn: 0.05         # put-skew above this prints a "downside fear / dips may air-pocket" note
+  rr_good: 2.0            # reward:risk at/above this reads "favourable"
+
 # Support/resistance zone detection (quant/levels.py). Standalone scorer — does not
 # feed the decision engine yet. Strength is fuzzy and RELATIVE to each ticker, so labels
 # come from within-ticker score quantiles, not absolute cutoffs.

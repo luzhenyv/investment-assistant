@@ -93,6 +93,80 @@ def fetch_option_chain(symbol: str, expiry: str) -> dict[tuple[str, float], floa
     return ivs
 
 
+def _parse_iso(s: str) -> dt.date | None:
+    try:
+        return dt.date.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def _is_monthly(d: dt.date) -> bool:
+    """Standard monthly expiry = the 3rd Friday (weekday 4, day 15-21)."""
+    return d.weekday() == 4 and 15 <= d.day <= 21
+
+
+def pick_monthly_expiry(symbol: str, dte_lo: int, dte_hi: int) -> str | None:
+    """Pick the most liquid expiry for positioning: the 3rd-Friday monthly whose days-to-
+    expiry is closest to the [dte_lo, dte_hi] midpoint. Falls back to the nearest listed
+    expiry to that midpoint if no monthly qualifies. Returns an ISO date string or None.
+
+    NOTE: yfinance is the free options source. Alpha Vantage options (the user's preferred
+    primary) are premium-only, so this stays on yfinance until a premium key is available."""
+    try:
+        listed = yf.Ticker(symbol).options or []
+    except Exception:  # noqa: BLE001 — network/parse failures are expected
+        return None
+    today = dt.date.today()
+    target = (dte_lo + dte_hi) / 2
+    dated = [(d, (d - today).days) for e in listed if (d := _parse_iso(e)) and (d - today).days > 0]
+    if not dated:
+        return None
+    monthlies = [(d, dte) for d, dte in dated if _is_monthly(d) and dte_lo <= dte <= dte_hi]
+    pool = monthlies or dated
+    best = min(pool, key=lambda x: abs(x[1] - target))
+    return best[0].isoformat()
+
+
+def fetch_chain_grid(symbol: str, expiry: str) -> dict | None:
+    """Per-strike OI / volume / IV / mid-price for one expiry, both rights:
+    `{"calls": {strike: {"oi","vol","iv","price"}}, "puts": {...}}`. Returns None on
+    failure. NaNs coerced (oi/vol -> 0); IV outside (0.01, 3.0) -> None (yfinance reports
+    garbage IV on illiquid/deep-ITM strikes — same guard as fetch_option_chain)."""
+    try:
+        tk = yf.Ticker(symbol)
+        if expiry not in (tk.options or []):
+            return None
+        chain = tk.option_chain(expiry)
+    except Exception:  # noqa: BLE001
+        return None
+
+    def _f(x, default=0.0):
+        try:
+            v = float(x)
+            return default if v != v else v  # NaN -> default
+        except (TypeError, ValueError):
+            return default
+
+    out: dict[str, dict] = {"calls": {}, "puts": {}}
+    for right, frame in (("calls", chain.calls), ("puts", chain.puts)):
+        cols = list(frame.columns)
+        for row in frame.itertuples(index=False):
+            r = dict(zip(cols, row))
+            strike = _f(r.get("strike"), default=None)
+            if strike is None:
+                continue
+            iv = _f(r.get("impliedVolatility"), default=0.0)
+            bid, ask = _f(r.get("bid")), _f(r.get("ask"))
+            mid = (bid + ask) / 2 if bid and ask else _f(r.get("lastPrice"))
+            out[right][float(strike)] = {
+                "oi": _f(r.get("openInterest")),
+                "vol": _f(r.get("volume")),
+                "iv": iv if 0.01 < iv < 3.0 else None,
+                "price": mid,
+            }
+    return out if (out["calls"] or out["puts"]) else None
+
+
 def _download_sector(symbol: str) -> str | None:
     """The symbol's GICS-style sector from yfinance, or None if unavailable."""
     try:

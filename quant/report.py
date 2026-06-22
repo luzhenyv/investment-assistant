@@ -4,7 +4,9 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
-from quant.models import Fundamentals, MarketState, OptionAnalysis, Recommendation
+from quant.models import (
+    Fundamentals, MarketState, OptionAnalysis, OptionPositioning, Recommendation,
+)
 
 
 def _valuation_line(f: Fundamentals) -> str:
@@ -66,6 +68,33 @@ def _option_line(a: OptionAnalysis) -> list[str]:
     return lines
 
 
+def _fmt(x, money=True, pct=False):
+    if x is None:
+        return "—"
+    if pct:
+        return f"{x:+.0%}"
+    return f"${x:,.0f}" if money else f"{x:.2f}"
+
+
+def _positioning_line(p: OptionPositioning) -> list[str]:
+    """Lines for one underlying's option-chain positioning."""
+    lines = [f"### {p.symbol} — spot ${p.spot:,.2f} · {p.expiry} ({p.dte}d)"]
+    lines.append(
+        f"- put wall {_fmt(p.put_wall)} · call wall {_fmt(p.call_wall)} · max pain {_fmt(p.max_pain)}"
+    )
+    if p.em is not None:
+        lines.append(f"- expected move ±${p.em:,.0f} ({p.em_pct:.0%}) → {_fmt(p.em_low)}–{_fmt(p.em_high)}")
+    rr = f"{p.rr_ratio:.1f}:1" if p.rr_ratio is not None else "—"
+    pcoi = f"{p.pc_oi:.2f}" if p.pc_oi is not None else "—"
+    iv = f"{p.atm_iv:.0%}" if p.atm_iv is not None else "—"
+    skew = f"{p.iv_skew:+.0%}" if p.iv_skew is not None else "—"
+    lines.append(f"- reward:risk {rr} · P/C OI {pcoi} · ATM IV {iv} · skew {skew}")
+    for n in p.notes:
+        lines.append(f"- {n}")
+    lines.append("")
+    return lines
+
+
 def render_markdown(
     generated_at: str,
     market: MarketState,
@@ -74,8 +103,10 @@ def render_markdown(
     option_analyses: list[OptionAnalysis],
     summary: dict,
     fundamentals: dict[str, Fundamentals] | None = None,
+    positioning: dict[str, OptionPositioning] | None = None,
 ) -> str:
     fundamentals = fundamentals or {}
+    positioning = positioning or {}
     out: list[str] = [f"# Weekly Investment Review — {generated_at}", ""]
 
     out.append(f"## Market: **{market.regime}**  (bull score {market.bull_score:.0f}/100)")
@@ -116,6 +147,12 @@ def render_markdown(
         out.append("_None recorded._")
         out.append("")
 
+    if positioning:
+        out.append("## Options Positioning (S/R from the chain)")
+        out.append("")
+        for sym in sorted(positioning):
+            out += _positioning_line(positioning[sym])
+
     out.append("## Watchlist candidates")
     out.append("")
     if watchlist_recs:
@@ -132,6 +169,9 @@ def render_markdown(
     if fundamentals:
         out.append("_Valuation hints are from Alpha Vantage: trailing GAAP PE can mislead for cyclicals "
                    "(watch forward PE); analyst target is lagging consensus._")
+    if positioning:
+        out.append("_Option positioning is free yfinance data: EOD OI lags ~1 day, there's no buy/sell "
+                   "flow direction, and walls/max-pain are tendencies (not levels). Not backtested._")
     return "\n".join(out)
 
 
@@ -145,10 +185,13 @@ def generate(
     option_analyses: list[OptionAnalysis],
     summary: dict,
     fundamentals: dict[str, Fundamentals] | None = None,
+    positioning: dict[str, OptionPositioning] | None = None,
 ) -> None:
     fundamentals = fundamentals or {}
+    positioning = positioning or {}
     md = render_markdown(
-        generated_at, market, holding_recs, watchlist_recs, option_analyses, summary, fundamentals
+        generated_at, market, holding_recs, watchlist_recs, option_analyses, summary,
+        fundamentals, positioning,
     )
     with open(md_path, "w") as f:
         f.write(md)
@@ -161,6 +204,7 @@ def generate(
         "watchlist": [asdict(r) for r in watchlist_recs],
         "options": [asdict(a) for a in option_analyses],
         "fundamentals": {sym: asdict(f) for sym, f in fundamentals.items()},
+        "positioning": {sym: asdict(p) for sym, p in positioning.items()},
     }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)

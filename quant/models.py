@@ -74,6 +74,32 @@ class Fundamentals:
 
 
 @dataclass
+class OptionPositioning:
+    """Option-chain positioning snapshot for one underlying (see quant/option_flow.py).
+    Report-only hints from the free yfinance chain (EOD OI lags ~1 day; no flow direction;
+    not backtestable). Any field may be None when the chain is thin."""
+    symbol: str
+    spot: float
+    expiry: str                   # ISO date of the analysed monthly expiry
+    dte: int                      # days to that expiry
+    put_wall: float | None        # max put-OI strike (potential support)
+    call_wall: float | None       # max call-OI strike (potential resistance)
+    max_pain: float | None        # strike minimising total option-holder payout
+    em: float | None              # expected move ($, ATM straddle)
+    em_pct: float | None          # expected move as % of spot
+    em_low: float | None          # spot - em
+    em_high: float | None         # spot + em
+    pc_oi: float | None           # put/call open-interest ratio (>1 = more puts)
+    pc_vol: float | None          # put/call volume ratio (today's positioning)
+    atm_iv: float | None          # at-the-money implied vol
+    iv_skew: float | None         # OTM put IV - OTM call IV (positive = downside fear)
+    reward: float | None          # (call_wall - spot)/spot, upside to resistance
+    risk: float | None            # (spot - put_wall)/spot, downside to support
+    rr_ratio: float | None        # reward / risk (the "赔率"; >=2 favourable)
+    notes: list[str] = field(default_factory=list)  # confluence vs levels.py zones + reads
+
+
+@dataclass
 class Holding:
     symbol: str
     core: float
