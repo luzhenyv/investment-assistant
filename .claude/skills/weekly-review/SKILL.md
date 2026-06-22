@@ -32,7 +32,8 @@ under water compounds it.
 a real parabola *or* a data error — don't assume bad data. Cross-check the cached series
 (`data/cache/SYMBOL_*.parquet`) **and** an external source (finviz / broker) before concluding.
 (Hard-won: a +300–870% RS on the memory names this session looked like garbage; finviz confirmed it
-was a real AI-memory melt-up. Verify, don't assume.)
+was a real AI-memory melt-up. Verify, don't assume.) The same verify-against-a-source rule
+applies to any catalyst you cite in item 7 — link it or drop it.
 
 ## Checklist — verdict + one-line WHY for each
 1. **Action-list integrity.** Sum the `Close` `dollar_gap`s and recompute *true* post-close cash %.
@@ -53,6 +54,24 @@ was a real AI-memory melt-up. Verify, don't assume.)
    staged step (`target/max_steps`) and the structural cap — a few names at their ceilings can't
    absorb a big cash pile, so redeployment usually needs watchlist entries, not just topping up.
 6. **Options.** Flag time-sensitive items: short calls ITM (assignment risk → roll up/out), low DTE.
+7. **Catalysts & event risk (verify first, then flag only what's time-sensitive).** The mechanical
+   pass is blind to the calendar and the newswire. Before endorsing any Add / Increase / Hold, scan
+   for near-term catalysts — but surface **only what you can confirm from a source (link it); never
+   invent news**, and keep it to material, this-week-relevant items, not a feed.
+   - **Earnings / binary prints.** Flag if a buy/hold reports within ~2 weeks. Entering an extended
+     or parabolic name right before a binary print is gambling, not staging (e.g. MU 6/24, ahead of
+     a +305% run) — prefer waiting for the print or sizing via small defined-risk options.
+     Cross-reference item 2's parabolic rule.
+   - **Insider & institutional flow.** Large insider/CEO sells or buys (Form 4), block trades,
+     notable 13F shifts. A cluster of insider *selling* into a parabola is a caution; sized insider
+     *buying* on a beaten-down name can corroborate a Mean-Reversion add.
+   - **Leadership / ownership changes.** CEO/CFO/founder/board departures or an activist stake
+     change the thesis (e.g. Reed Hastings not standing for NFLX re-election as NFLX broke down).
+     Call out a governance overhang on a Close/Hold.
+   - **Market-structure events (one line, brief).** Triple witching (3rd Fri of Mar/Jun/Sep/Dec;
+     rolls earlier if that Friday is a holiday), index rebalances, FOMC/CPI. Note elevated
+     volume/volatility and option-pin effects so a single-day volume/price spike isn't over-read,
+     and so option rolls (item 6) account for expiry mechanics.
 
 ## Output
 Chat only — no file writes/edits unless asked. Lead with a one-line bottom line, then a priority-
