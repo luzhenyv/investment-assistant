@@ -23,6 +23,19 @@ Candidates from both are pooled before clustering.
 
 Trendlines are deferred: sloping levels need a different (slope, intercept) model,
 and all calibration zones are horizontal.
+
+TODO(sr-roadmap item 4): options gamma/positioning layer (call/put OI walls = resistance/
+support, max pain, approx GEX). The one layer that could give RESISTANCE real edge (mechanical
+dealer hedging, invisible to price geometry).
+  DATA: yfinance serves the CURRENT chain for free — openInterest/volume/IV per strike — enough
+  to BUILD a live overlay, but it has NO history, so the method cannot be edge-validated by
+  scripts/level_edge.py (our walk-forward needs as-of-date chains years back).
+  INTERIM: scripts/snapshot_options.py logs daily chains to data/options_snapshots/ so we accrue
+  our own history; revisit once ~6-12mo has accumulated (or buy a historical OI source: ORATS /
+  Polygon / OptionMetrics / CBOE).
+  CAVEATS: GEX also needs a dealer-sign assumption (no free flow-classification data); OI is EOD
+  and lagged ~1 day; illiquid strikes are noisy. Until validated, ship report-only / unvalidated,
+  never at the trust level of the edge-validated price methods.
 """
 from __future__ import annotations
 
@@ -212,12 +225,33 @@ def _ma_levels(frame: pl.DataFrame, atr: float, lev: dict, timeframe: str) -> li
     return out
 
 
-def _volume_nodes(
+def _value_area(vol_bins: list[float], poc: int, frac: float) -> tuple[int, int]:
+    """Market-Profile value area: expand outward from the POC, each step taking the
+    higher-volume neighbour, until cumulative volume reaches `frac` of the total."""
+    total = sum(vol_bins)
+    target = total * frac
+    lo = hi = poc
+    acc = vol_bins[poc]
+    n = len(vol_bins)
+    while acc < target and (lo > 0 or hi < n - 1):
+        below = vol_bins[lo - 1] if lo > 0 else -1.0
+        above = vol_bins[hi + 1] if hi < n - 1 else -1.0
+        if above >= below:
+            hi += 1
+            acc += vol_bins[hi]
+        else:
+            lo -= 1
+            acc += vol_bins[lo]
+    return lo, hi
+
+
+def _volume_profile(
     frame: pl.DataFrame, bar_days: int, lev: dict, timeframe: str
 ) -> list[_Candidate]:
-    """Volume-by-price high-volume nodes (Close-binned volume; VWAP-by-price proxy).
-
-    Returns [] when no Volume column is present, so the pipeline is volume-agnostic."""
+    """Volume-by-price profile: Point of Control (POC), Value Area edges (VAH/VAL), and
+    High-Volume Nodes. Each bar's volume is spread across its High-Low range (a better
+    proxy than close-binning). POC/HVNs are where the most trade — the strongest volume
+    evidence. Returns [] when no Volume column is present (pipeline stays volume-agnostic)."""
     if "Volume" not in frame.columns or frame.height < 10:
         return []
     nbins = lev.get("volume_bins", 40)
@@ -227,35 +261,37 @@ def _volume_nodes(
     if hi <= lo:
         return []
     width = (hi - lo) / nbins
-    binned = (
-        frame.with_columns(
-            ((pl.col("Close") - lo) / width).floor().clip(0, nbins - 1).cast(pl.Int64).alias("_b")
-        )
-        .group_by("_b")
-        .agg(pl.col("Volume").sum().alias("v"), pl.len().alias("bars"))
-        .sort("_b")
-    )
-    bidx = binned["_b"].to_list()
-    vols = binned["v"].to_list()
-    bars = binned["bars"].to_list()
-    vol_by_bin = dict(zip(bidx, vols))
-    bars_by_bin = dict(zip(bidx, bars))
-    mean_vol = sum(vols) / len(vols) if vols else 0.0
-    if mean_vol <= 0:
+    lows = frame["Low"].to_list()
+    highs = frame["High"].to_list()
+    vols = frame["Volume"].to_list()
+    vol_bins = [0.0] * nbins
+    bar_bins = [0] * nbins  # bars touching each bin -> time-at-price proxy
+    for low_i, high_i, vol in zip(lows, highs, vols):
+        b0 = max(0, min(nbins - 1, int((low_i - lo) / width)))
+        b1 = max(0, min(nbins - 1, int((high_i - lo) / width)))
+        per = vol / (b1 - b0 + 1)
+        for b in range(b0, b1 + 1):
+            vol_bins[b] += per
+            bar_bins[b] += 1
+    total = sum(vol_bins)
+    if total <= 0:
         return []
-    out: list[_Candidate] = []
-    for b, v in zip(bidx, vols):
-        if v < mean_vol * node_mult:
-            continue
-        # local maximum vs neighbouring bins
-        if v < vol_by_bin.get(b - 1, 0) or v < vol_by_bin.get(b + 1, 0):
-            continue
-        center = lo + (b + 0.5) * width
-        out.append(_Candidate(
-            price=center, low=lo + b * width, high=lo + (b + 1) * width,
-            method="volume", is_point=False, duration_days=bars_by_bin[b] * bar_days,
-            timeframe=timeframe, volume=v / mean_vol,
-        ))
+    mean = total / nbins
+    poc = max(range(nbins), key=lambda b: vol_bins[b])
+    val, vah = _value_area(vol_bins, poc, lev.get("value_area_frac", 0.70))
+
+    def cand(b: int) -> _Candidate:
+        return _Candidate(lo + (b + 0.5) * width, lo + b * width, lo + (b + 1) * width,
+                          "volume", False, bar_bins[b] * bar_days, timeframe,
+                          volume=vol_bins[b] / mean)
+
+    seen = {poc, val, vah}
+    out = [cand(poc), cand(val), cand(vah)]
+    # extra high-volume nodes (local maxima above the threshold)
+    for b in range(1, nbins - 1):
+        if b not in seen and vol_bins[b] >= mean * node_mult \
+                and vol_bins[b] >= vol_bins[b - 1] and vol_bins[b] >= vol_bins[b + 1]:
+            out.append(cand(b))
     return out
 
 
@@ -305,7 +341,7 @@ def _extract(
     cands += _fib_levels(frame, bar_days, lev, atr, timeframe)
     cands += _round_numbers(frame, atr, lev, timeframe)
     cands += _ma_levels(frame, atr, lev, timeframe)
-    cands += _volume_nodes(frame, bar_days, lev, timeframe)
+    cands += _volume_profile(frame, bar_days, lev, timeframe)
     cands += _anchored_vwap(frame, bar_days, lev, atr, timeframe)
     return cands
 
@@ -399,6 +435,13 @@ def _label_zones(zones: list[Zone], lev: dict) -> None:
         z.label = label
 
 
+def _flipped(low: float, high: float, max_close: float, min_close: float, band: float) -> bool:
+    """True when price closed decisively (> band) on BOTH sides of the zone — a level the
+    market broke and role-reversed. Edge test: flipped SUPPORT reverses +2.6pp vs random;
+    non-flipped support has ~no edge."""
+    return max_close > high + band and min_close < low - band
+
+
 # --------------------------------------------------------------------------- #
 # Public entry point
 # --------------------------------------------------------------------------- #
@@ -441,6 +484,17 @@ def detect_zones(df: pl.DataFrame, cfg: dict, current_price: float | None = None
     # Confluence filter: drop zones with too few distinct methods (see _label_zones note).
     min_methods = lev.get("min_methods", 2)
     zones = [z for z in zones if len(z.methods) >= min_methods]
+    # Polarity flip: tag zones price has closed decisively on both sides of, then reward the
+    # edge-positive case. Edge test: flipped SUPPORT carries the support edge (+2.6pp); flipped
+    # RESISTANCE is broken overhead that tends to get reclaimed (negative) — so discount it.
+    flip_band = lev.get("flip_atr", 1.0) * atr_val
+    flip_bonus = lev.get("flip_bonus", 0.2)
+    max_close = float(daily["Close"].max())
+    min_close = float(daily["Close"].min())
+    for z in zones:
+        z.flipped = _flipped(z.low, z.high, max_close, min_close, flip_band)
+        if z.flipped:
+            z.score *= (1 + flip_bonus) if z.kind == "support" else (1 - flip_bonus)
     _label_zones(zones, lev)
     zones.sort(key=lambda z: z.score, reverse=True)
     return zones

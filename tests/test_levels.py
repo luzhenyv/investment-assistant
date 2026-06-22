@@ -101,13 +101,28 @@ def test_low_confluence_zone_capped_at_medium():
 
 
 # --- volume ------------------------------------------------------------------
-def test_volume_node_detected():
+def test_volume_profile_poc():
     # 30 bars parked at 100 (heavy volume) + scattered light-volume bars elsewhere
     closes = [100] * 30 + [80, 85, 90, 110, 115, 120, 95, 105, 88, 112]
     vols = [1000] * 30 + [10] * 10
-    nodes = levels._volume_nodes(_frame(closes, vols), bar_days=1, lev=LEV["levels"], timeframe="daily")
-    assert any(n.low <= 100 <= n.high for n in nodes)
+    nodes = levels._volume_profile(_frame(closes, vols), bar_days=1, lev=LEV["levels"], timeframe="daily")
     assert all(n.method == "volume" for n in nodes)
+    # the POC (highest-volume node) should sit at the 100 cluster
+    poc = max(nodes, key=lambda n: n.volume)
+    assert poc.low <= 100 <= poc.high
+
+
+def test_polarity_flip_rule():
+    assert levels._flipped(95, 105, max_close=120, min_close=80, band=5)   # closed both sides
+    assert not levels._flipped(95, 105, max_close=120, min_close=98, band=5)  # never below
+    assert not levels._flipped(95, 105, max_close=108, min_close=80, band=5)  # never above
+
+
+def test_value_area_expands_around_poc():
+    # symmetric profile peaked at the centre bin -> value area brackets it
+    bins = [1.0, 2.0, 5.0, 10.0, 5.0, 2.0, 1.0]
+    val, vah = levels._value_area(bins, poc=3, frac=0.70)
+    assert val < 3 < vah and val >= 0 and vah <= 6
 
 
 def test_anchored_vwap():

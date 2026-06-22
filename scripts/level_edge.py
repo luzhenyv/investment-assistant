@@ -100,7 +100,7 @@ def _collect(ticker, sym, cfg):
         for z in zones:
             o = _resolve(z.kind, z.low, z.high, fhigh, flow, atr, M_ATR)
             if o is not None:
-                det.append((o, frozenset(z.methods), z.kind))
+                det.append((o, frozenset(z.methods), z.kind, z.touches, z.flipped))
         # drift-matched random controls, generated per SIDE so each kind has its own baseline
         # (uptrend drift makes support and resistance base rates very different).
         for _ in range(RAND_PER_T):
@@ -109,7 +109,7 @@ def _collect(ticker, sym, cfg):
                 klo, khi = lv - med_w / 2, lv + med_w / 2
                 o = _resolve(kind, klo, khi, fhigh, flow, atr, M_ATR)
                 if o is not None:
-                    rnd.append((o, frozenset(), kind))
+                    rnd.append((o, frozenset(), kind, 0, False))
     return det, rnd
 
 
@@ -174,6 +174,16 @@ def main():
         line("  1 method", [e for e in d if len(e[1]) == 1])
         line("  2 methods", [e for e in d if len(e[1]) == 2])
         line("  >=3 methods", [e for e in d if len(e[1]) >= 3])
+        # e[3] = touch count, e[4] = polarity-flipped. These test the lecture's "repeated
+        # tests strengthen" vs Western TA's "retests weaken", and whether role-reversal helps.
+        print("  by touch count:")
+        line("  touches 1-2", [e for e in d if e[3] <= 2])
+        line("  touches 3-5", [e for e in d if 3 <= e[3] <= 5])
+        line("  touches 6-10", [e for e in d if 6 <= e[3] <= 10])
+        line("  touches 11+", [e for e in d if e[3] >= 11])
+        print("  by polarity:")
+        line("  flipped", [e for e in d if e[4]])
+        line("  not flipped", [e for e in d if not e[4]])
 
     print(f"\n{'#' * 72}\nEDGE vs KIND-MATCHED RANDOM BASELINE (out-of-sample walk-forward)\n{'#' * 72}")
     report("support")

@@ -44,6 +44,7 @@ class Zone:
     methods: list[str] = field(default_factory=list)     # distinct sources, e.g. ["fib","swing","volume"]
     timeframes: list[str] = field(default_factory=list)  # ["weekly","daily"]
     members: int = 1            # candidates merged into this zone (confluence proxy)
+    flipped: bool = False       # price closed decisively on BOTH sides -> polarity-flip level
 
     @property
     def mid(self) -> float:

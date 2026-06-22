@@ -119,9 +119,12 @@ levels:
   # LESS than a random level, only >=3-method zones beat it.
   min_methods: 2          # drop zones backed by fewer than this many distinct methods (noise)
   strong_min_methods: 3   # only >=3-method zones may earn strong / super-strong labels
-  volume_bins: 40         # price buckets for volume-by-price nodes
+  volume_bins: 40         # price buckets for the volume-by-price profile
   volume_node_mult: 1.3   # a bucket is a high-volume node when its volume > this * mean bucket
+  value_area_frac: 0.70   # Value Area = contiguous bins around POC holding this share of volume
   vwap_anchors: 3         # number of major swing lows to anchor VWAP from (bullish dynamic support)
+  flip_atr: 1.0           # polarity flip: price closed > this many ATRs on BOTH sides => role-reversed
+  flip_bonus: 0.2         # score x(1+this) for flipped SUPPORT (edge +2.6pp), x(1-this) for flipped resistance
   weights:                # per-candidate score term weights
     kind: 1.0             # structural point (1.0) vs range band (0.6)
     duration: 2.5         # log1p(duration_days) — TIME PRIORITY, the lecture's #1 driver:
