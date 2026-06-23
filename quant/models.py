@@ -30,6 +30,10 @@ class Signal:
     breakout: bool
     state: str = "Range"   # asset state machine label (see scoring.asset_state)
     rs: float = 0.0        # relative strength: trailing return over rs_lookback
+    volume: float = 0.0    # latest bar volume (shares)
+    rvol: float = 1.0      # relative volume: today / prior-lookback avg (1.0 = average)
+    vol_z: float = 0.0     # volume z-score over the prior lookback (the 'abnormal' measure)
+    vol_state: str = "Normal"  # Normal | Elevated | Abnormal (off vol_z, see scoring.volume_state)
 
 
 @dataclass

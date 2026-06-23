@@ -77,6 +77,9 @@ def _scores(sig: Signal, sector: str | None = None) -> dict:
         "rs": round(sig.rs, 3),
         "rsi": round(sig.rsi),
         "price": round(sig.price, 2),
+        "rvol": round(sig.rvol, 2),
+        "vol_z": round(sig.vol_z, 2),
+        "vol_state": sig.vol_state,
     }
     if sector:
         scores["sector"] = sector

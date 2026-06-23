@@ -26,6 +26,13 @@ scoring:
   accel_rsi: 62           # trend>=75 + (breakout or RSI>=this) => Trend Acceleration
   rs_lookback: 126        # trailing-return window for relative strength (~6 months)
 
+# Abnormal-volume overlay (quant/scoring.py). Report-only — never feeds trend/momentum/state.
+# RVOL = today / prior-lookback avg; vol_z = z-score over that window. Used by the daily review.
+volume:
+  lookback: 20            # bars for the RVOL baseline & z-score window (~1 month)
+  elevated_z: 1.0         # vol_z >= this  => "Elevated"
+  abnormal_z: 2.0         # vol_z >= this  => "Abnormal"
+
 # Fundamentals / valuation hints (quant/valuation.py). Report-only — does NOT feed the
 # decision engine or backtest. PE/PEG/analyst target normalised to a vendor-neutral schema, so
 # the source is pluggable (more coming: broker, finviz, ...). `source: yfinance` (default) needs

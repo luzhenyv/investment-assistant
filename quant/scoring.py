@@ -41,6 +41,17 @@ def is_breakout(price: float, high_52w: float) -> bool:
     return price >= high_52w
 
 
+def volume_state(vol_z: float, cfg: dict) -> str:
+    """Classify today's volume z-score into Normal | Elevated | Abnormal. Report-only —
+    a parallel overlay that never feeds trend/momentum/state (like valuation does not)."""
+    vcfg = cfg.get("volume", {})
+    if vol_z >= vcfg.get("abnormal_z", 2.0):
+        return "Abnormal"
+    if vol_z >= vcfg.get("elevated_z", 1.0):
+        return "Elevated"
+    return "Normal"
+
+
 def asset_state(
     price: float,
     ma200: float,
@@ -72,7 +83,7 @@ def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
     `df` is a Polars frame sorted by date with Open/High/Low/Close columns; the
     indicators read the latest (last-row) value, so slicing `df` to week T turns
     this into an as-of-T snapshot for the backtester."""
-    close, high, low = df["Close"], df["High"], df["Low"]
+    close, high, low, vol = df["Close"], df["High"], df["Low"], df["Volume"]
     price = float(close.tail(1).item())
     ma20 = indicators.moving_average(close, 20)
     ma50 = indicators.moving_average(close, 50)
@@ -84,6 +95,9 @@ def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
     atr_mult = cfg["scoring"]["pullback_atr_mult"]
     accel_rsi = cfg["scoring"].get("accel_rsi", 62)
     rs = indicators.trailing_return(close, cfg["scoring"].get("rs_lookback", 126))
+    vol_lookback = cfg.get("volume", {}).get("lookback", 20)
+    rvol = indicators.rvol(vol, vol_lookback)
+    vol_z = indicators.volume_zscore(vol, vol_lookback)
     trend = trend_score(price, ma20, ma50, ma200)
     pullback = is_pullback(price, ma50, atr_val, atr_mult)
     breakout = is_breakout(price, hi)
@@ -103,4 +117,8 @@ def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
         breakout=breakout,
         state=asset_state(price, ma200, trend, rsi_val, pullback, breakout, accel_rsi),
         rs=rs,
+        volume=float(vol.tail(1).item()),
+        rvol=rvol,
+        vol_z=vol_z,
+        vol_state=volume_state(vol_z, cfg),
     )

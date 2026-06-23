@@ -70,6 +70,33 @@ def correlation(df_a: pl.DataFrame, df_b: pl.DataFrame, lookback: int) -> float:
     return float(c) if c is not None else 0.0
 
 
+def rvol(volume: pl.Series, lookback: int = 20) -> float:
+    """Relative volume: today's volume / average of the prior `lookback` bars (today
+    excluded, so a spike doesn't inflate its own baseline). 1.0 = average; >1.5 ≈ busy.
+    Returns 1.0 (neutral) when history is too short or the baseline is zero/empty."""
+    if volume.len() < lookback + 1:
+        return 1.0
+    today = float(volume.tail(1).item())
+    base = float(volume.tail(lookback + 1).head(lookback).mean())
+    if not base:
+        return 1.0
+    return today / base
+
+
+def volume_zscore(volume: pl.Series, lookback: int = 20) -> float:
+    """How many standard deviations today's volume sits above its recent norm, over the
+    prior `lookback` bars (today excluded). The statistical 'abnormal' measure. Returns
+    0.0 when history is too short or the window is flat (zero std)."""
+    if volume.len() < lookback + 1:
+        return 0.0
+    prior = volume.tail(lookback + 1).head(lookback)
+    mean = prior.mean()
+    std = prior.std()
+    if not std:
+        return 0.0
+    return (float(volume.tail(1).item()) - float(mean)) / float(std)
+
+
 def high_52w(high: pl.Series) -> float:
     return float(high.tail(252).max())
 
