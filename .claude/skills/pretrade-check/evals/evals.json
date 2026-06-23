@@ -1,0 +1,23 @@
+{
+  "skill_name": "pretrade-check",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm thinking of buying MU at the open. Here's the pre-trade brief in output/demo/. Should I?",
+      "expected_output": "Web-searches the catalyst and classifies it (macro/sector beta + pre-earnings de-risking, not a thesis crack); reads the re-anchored levels (near max-pain/support, off the call wall, live R:R); fires the SOFT earnings gate (reports in 2d) — recommends NOT full size into the print: wait-for-print or small starter + cash-secured put at the put wall; gives stop = close below the put wall, not the too-tight role stop; appends a Catalyst & Timed Action section to the .md; lists sources.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "NBIS gapped down hard today and the brief flags it idiosyncratic. Is this a buy?",
+      "expected_output": "Treats idiosyncratic + no corroborating macro/peer move as the thesis-breaking tell; web-searches for a company-specific catalyst; if a guidance cut/downgrade/governance issue is found, calls stand-aside (forward-PE 'cheap' = value trap); if NO catalyst is found, says do not enter blind — investigate first, never invents news; links any source cited.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Run after hours: the brief shows today_session=false for NVDA. What now?",
+      "expected_output": "Flags that the quote is a stale last close (market closed), so today's move and the re-anchored distances are as-of the last session, not live; advises re-running pretrade.py at/after the next open before acting, and still gives the structural read (no near-term earnings gate ⇒ no soft-gate constraint).",
+      "files": []
+    }
+  ]
+}

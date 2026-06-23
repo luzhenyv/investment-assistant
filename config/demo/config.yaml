@@ -201,6 +201,13 @@ target_weights:
   RKLB: 0.06
   NBIS: 0.06
 
+# Pre-trade ('Monday pre-flight') layer (pretrade.py / quant/pretrade.py). Report-only — overlays
+# a LIVE intraday quote on the engine signal and re-anchors levels to the live price. Earnings inside
+# the gate is a SOFT warning + sizing guidance (not a block); catalyst/news judgment is the skill's job.
+pretrade:
+  earnings_gate_days: 5     # earnings within this many days => soft "don't size full into the print"
+  entry_zone_buffer: 0.05   # live price within this % above the put wall reads "near support entry zone"
+
 # Intent -> suggested option structure(s). A hint for the human; the engine does NOT pick strikes.
 intent_strategy_map:
   "Add Core":          ["Buy shares", "Cash Secured Put"]

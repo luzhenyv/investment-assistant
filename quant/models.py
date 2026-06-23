@@ -120,6 +120,26 @@ class RoleView:
 
 
 @dataclass
+class PreTradeBrief:
+    """Per-symbol pre-trade ('Monday pre-flight') snapshot (see quant/pretrade.py). Overlays a
+    LIVE intraday quote on the engine's daily-bar signal so a human can time an entry/exit that the
+    weekly report (a session behind) can't. Report-only; the pretrade-check skill adds the catalyst."""
+    symbol: str
+    as_of: str                              # ISO timestamp the brief was built
+    live: dict                              # fetch_quote() snapshot: last / prev_close / day range / source
+    scores: dict = field(default_factory=dict)   # engine signal at the daily close: state/trend/mom/rs/rsi/price
+    valuation: dict = field(default_factory=dict) # pe / forward_pe / peg / analyst_target / upside / label
+    today_move_pct: float | None = None     # live.last vs prev_close
+    levels: dict = field(default_factory=dict)    # distances from LIVE price to walls/max-pain/TP/SL + live R:R
+    roles: dict = field(default_factory=dict)     # role / horizon / tp_price / sl_price
+    earnings: dict | None = None            # fetch_earnings_date() + within_gate / expected_move_pct / sizing note
+    market_ctx: dict = field(default_factory=dict)  # SPY/QQQ day move + VIX + idiosyncratic-vs-macro read
+    portfolio: dict = field(default_factory=dict)   # book context: cash / total_value / cash_frac / cash_status / deployable
+    position: dict = field(default_factory=dict)    # this name: held / shares / weight vs target / gap / one scale-in step ($)
+    notes: list[str] = field(default_factory=list)  # re-anchored human reads (entry zone, SL breach, gate, ...)
+
+
+@dataclass
 class Holding:
     symbol: str
     core: float

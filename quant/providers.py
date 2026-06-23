@@ -361,6 +361,78 @@ def load_cached_fundamentals(symbols: list[str]) -> dict[str, dict | None]:
     }
 
 
+def fetch_quote(symbol: str) -> dict | None:
+    """Live intraday snapshot — the piece the daily-bar engine can't see (it's a session
+    behind). Returns `{last, open, prev_close, day_high, day_low, change, change_pct,
+    today_session, source}` or None on failure. NO cache — pre-trade needs the freshest tick.
+
+    `today_session=True` means today's regular-session 1-minute bars were available (last is the
+    live/most-recent print); otherwise it falls back to the last daily close (market closed / no
+    intraday). `prev_close` is the last daily close strictly before today's session, so `change_pct`
+    is the true day move."""
+    try:
+        tk = yf.Ticker(symbol)
+        daily = tk.history(period="5d")
+        intra = tk.history(period="1d", interval="1m")
+    except Exception:  # noqa: BLE001 — network/parse failures are expected
+        return None
+    if daily is None or daily.empty:
+        return None
+
+    d_dates = [ts.date() for ts in daily.index]
+    d_close = [float(x) for x in daily["Close"]]
+
+    today_session = intra is not None and not intra.empty
+    if today_session:
+        i_date = intra.index[-1].date()
+        last = float(intra["Close"].iloc[-1])
+        open_ = float(intra["Open"].iloc[0])
+        day_high = float(intra["High"].max())
+        day_low = float(intra["Low"].min())
+        prior = [c for dte, c in zip(d_dates, d_close) if dte < i_date]
+        prev_close = prior[-1] if prior else (d_close[-2] if len(d_close) >= 2 else None)
+        source = "intraday"
+    else:
+        last = d_close[-1]
+        open_ = float(daily["Open"].iloc[-1])
+        day_high = float(daily["High"].iloc[-1])
+        day_low = float(daily["Low"].iloc[-1])
+        prev_close = d_close[-2] if len(d_close) >= 2 else None
+        source = "daily_close"
+
+    change = (last - prev_close) if prev_close is not None else None
+    change_pct = (change / prev_close) if (change is not None and prev_close) else None
+    return {
+        "last": last, "open": open_, "prev_close": prev_close,
+        "day_high": day_high, "day_low": day_low,
+        "change": change, "change_pct": change_pct,
+        "today_session": today_session, "source": source,
+    }
+
+
+def fetch_earnings_date(symbol: str) -> dict | None:
+    """Next scheduled earnings date for the symbol: `{next_date, days_until, is_estimate}` or
+    None when unknown / none upcoming. NO cache — the calendar moves. `is_estimate` is True when
+    yfinance reports a date *range* (unconfirmed). Source: yfinance `Ticker.calendar`."""
+    try:
+        cal = yf.Ticker(symbol).calendar
+    except Exception:  # noqa: BLE001 — network/parse failures are expected
+        return None
+    dates = cal.get("Earnings Date") if isinstance(cal, dict) else None
+    if not dates:
+        return None
+    today = dt.date.today()
+    upcoming = sorted(d for d in dates if isinstance(d, dt.date) and d >= today)
+    if not upcoming:
+        return None
+    nxt = upcoming[0]
+    return {
+        "next_date": nxt.isoformat(),
+        "days_until": (nxt - today).days,
+        "is_estimate": len(dates) > 1,
+    }
+
+
 def fetch_vix_history(period: str) -> pl.DataFrame | None:
     """Full VIX close history (cached) — used by the backtester for as-of lookups."""
     return cache.load_or_fetch("VIX", lambda: _download_vix(period), min_rows=1)
