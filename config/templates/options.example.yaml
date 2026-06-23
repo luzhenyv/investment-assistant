@@ -1,13 +1,52 @@
-# Option legs — for YOUR reference only. The engine does NOT read this file.
-# It mirrors v0.1, where options are intent "hints"; this just records what you hold
-# so the weekly snapshot (a private-repo commit) captures your full position.
-legs:
-  - underlying: NVDA
-    type: covered_call     # covered_call | csp | long_call | long_put | spread...
-    action: short          # long | short
-    strike: 200
-    expiry: 2026-07-18
-    contracts: 1
-    premium: 4.50          # per-share credit (short) or debit (long)
-    opened: 2026-06-10
-    note: "income on core"
+# Option strategies — READ by the engine for monitoring (separate Options section in
+# the weekly report). Metrics are underlying-based: DTE, moneyness, breakeven, max P/L,
+# intrinsic value, and assignment risk are derived from strikes + the live underlying
+# price. No option-price feed; P&L shown is an intrinsic-only floor.
+#
+# net_debit (per share, + = paid / - = received) is optional: if omitted it's computed
+# from leg premiums minus credits_collected (cumulative premium harvested from prior
+# rolled shorts). Per-leg `opened` dates are supported (a PMCC's legs differ).
+# `type` is a free-form display label.
+#
+# Illustrative NVDA examples only — replace with your own positions.
+strategies:
+  - id: NVDA-bull-call-spread
+    underlying: NVDA
+    type: vertical
+    opened: 2026-06-11
+    net_debit: 4.50           # per share (known)
+    note: "bullish, defined risk"
+    legs:
+      - action: long
+        right: call
+        strike: 200
+        expiry: 2026-07-24
+        contracts: 1
+      - action: short
+        right: call
+        strike: 210
+        expiry: 2026-07-24
+        contracts: 1
+
+  - id: NVDA-pmcc
+    underlying: NVDA
+    type: pmcc
+    opened: 2026-01-15           # LEAPS inception
+    # net_debit omitted -> computed: long premium - short premium - credits_collected
+    credits_collected: 6.00      # cumulative net premium from PRIOR rolled/closed shorts, per share
+    note: "stock replacement (fig leaf); short call rolled periodically"
+    legs:
+      - action: long
+        right: call
+        strike: 150
+        expiry: 2028-01-21
+        contracts: 1
+        opened: 2026-01-15
+        premium: 40.0
+      - action: short            # current cycle only
+        right: call
+        strike: 230
+        expiry: 2026-07-24
+        contracts: 1
+        opened: 2026-06-11
+        premium: 6.0
