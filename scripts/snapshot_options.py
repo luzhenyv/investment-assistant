@@ -30,7 +30,7 @@ import yfinance as yf
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from quant import profiles  # noqa: E402
+from quant import clock, profiles  # noqa: E402
 
 STORE = os.path.join(ROOT, "data", "options_snapshots")
 MAX_DTE = 120          # ignore expiries beyond ~4 months (sorted asc -> we can stop early)
@@ -130,8 +130,8 @@ def _snapshot(sym: str, today: dt.date, ts: str) -> str:
 
 def main() -> None:
     tickers = [a.upper() for a in sys.argv[1:]] or _universe()
-    today = dt.date.today()
-    ts = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    today = clock.today()
+    ts = clock.now().isoformat(timespec="seconds")
     print(f"Snapshotting {len(tickers)} symbols for {today.isoformat()} -> {STORE}")
     ok = 0
     for sym in tickers:

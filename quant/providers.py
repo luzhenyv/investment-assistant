@@ -13,7 +13,7 @@ import urllib.request
 import polars as pl
 import yfinance as yf
 
-from quant import cache
+from quant import cache, clock
 
 _SECTOR_CACHE = cache.CACHE_DIR / "sectors.json"
 _FUNDAMENTALS_CACHE = cache.CACHE_DIR / "fundamentals.json"
@@ -47,15 +47,18 @@ def _download_vix(period: str) -> pl.DataFrame | None:
 
 
 def fetch_history(
-    symbols: list[str], period: str, min_rows: int
+    symbols: list[str], period: str, min_rows: int, force_refresh: bool = False
 ) -> dict[str, pl.DataFrame]:
     """Return {symbol: OHLC Polars frame}. Symbols with no usable data are skipped.
 
-    `period` and `min_rows` come from the `data` section of config.yaml."""
+    `period` and `min_rows` come from the `data` section of config.yaml. `force_refresh=True`
+    bypasses the cache's reuse-if-written-today shortcut so callers that need the freshest bar
+    (the daily review, run after the close) re-download instead of serving a stale same-day file."""
     out: dict[str, pl.DataFrame] = {}
     for sym in symbols:
         df = cache.load_or_fetch(
-            sym, lambda s=sym: _download_history(s, period), min_rows=min_rows
+            sym, lambda s=sym: _download_history(s, period), min_rows=min_rows,
+            force_refresh=force_refresh,
         )
         if df is None:
             print(f"  ! skipping {sym}: insufficient data")
@@ -110,7 +113,7 @@ def pick_monthly_expiry(symbol: str, dte_lo: int, dte_hi: int) -> str | None:
         listed = yf.Ticker(symbol).options or []
     except Exception:  # noqa: BLE001 — network/parse failures are expected
         return None
-    today = dt.date.today()
+    today = clock.today()
     target = (dte_lo + dte_hi) / 2
     dated = [(d, (d - today).days) for e in listed if (d := _parse_iso(e)) and (d - today).days > 0]
     if not dated:
@@ -304,7 +307,7 @@ def fetch_fundamentals(symbols: list[str], cfg: dict) -> dict[str, dict | None]:
     refresh_days = fund.get("refresh_days", 7)
     budget = fund.get("max_api_calls_per_run") or None  # 0/absent => no cap
     stop_on_fail = spec["needs_key"]                    # AV throttle guard only
-    today = dt.date.today()
+    today = clock.today()
     cached = _read_fundamentals_cache()
     calls = 0
     stop = False
@@ -421,7 +424,7 @@ def fetch_earnings_date(symbol: str) -> dict | None:
     dates = cal.get("Earnings Date") if isinstance(cal, dict) else None
     if not dates:
         return None
-    today = dt.date.today()
+    today = clock.today()
     upcoming = sorted(d for d in dates if isinstance(d, dt.date) and d >= today)
     if not upcoming:
         return None

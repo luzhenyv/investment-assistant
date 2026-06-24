@@ -61,6 +61,8 @@ SCHEMA: dict[str, pl.DataType] = {
     "profit_margin": _F, "rev_growth": _F, "eps_growth": _F,
     # reproducibility: which code + which hyperparameter set produced this row
     "git_sha": _S, "config_hash": _S,
+    # raw daily bar for human verification (which session + the day's OHLCV; close == price above)
+    "bar_date": _S, "open": _F, "high": _F, "low": _F,
 }
 
 

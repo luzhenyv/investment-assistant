@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from quant import levels, providers
+from quant import clock, levels, providers
 from quant.models import OptionPositioning, Zone
 
 
@@ -171,7 +171,7 @@ def analyze(symbol: str, spot: float, df, cfg: dict) -> OptionPositioning | None
     if grid is None:
         return None
 
-    dte = max(0, (dt.date.fromisoformat(expiry) - dt.date.today()).days)
+    dte = max(0, (dt.date.fromisoformat(expiry) - clock.today()).days)
     pw, cw, mp = put_wall(grid, spot, cfg), call_wall(grid, spot, cfg), max_pain(grid, spot, cfg)
     em, em_pct = expected_move(grid, spot)
     em_low = spot - em if em is not None else None

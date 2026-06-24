@@ -63,3 +63,21 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+---
+
+## Project convention: time is UTC
+
+This project is run from different timezones, so **all wall-clock time is UTC**. Anything the system
+stores, logs, serializes, or puts in a filename (timestamps, `as_of_date`, file stamps, cache-freshness
+and DTE comparisons) must be computed in UTC.
+
+- **Never** use `datetime.now()` / `date.today()` (naive local) for system values. Use `quant/clock.py`:
+  `clock.now()` (aware UTC instant), `clock.today()` (UTC date), `clock.timestamp()`
+  (`'YYYY-MM-DD HH:MM:SS UTC'`), `clock.file_stamp()` (`'YYYY-MM-DD_HHMMSS'`), `clock.datestamp()`
+  (`'YYYY-MM-DD'`).
+- Stored timestamp format is `'YYYY-MM-DD HH:MM:SS UTC'` (explicit marker).
+- An interface MAY convert to the user's local zone **for display only** — it must not change the
+  stored/system format.
+- Dates that come from market data (a bar's `date`, an option `expiry`) are already calendar dates;
+  leave them as-is — the UTC rule governs *wall-clock* `now`/`today`, not data dates.

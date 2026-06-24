@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
 
 import yaml
 
 from quant import (
-    decision, option_flow, portfolio, pretrade, pretrade_report, profiles, providers, roles,
+    clock, decision, option_flow, portfolio, pretrade, pretrade_report, profiles, providers, roles,
     scoring, valuation,
 )
 
@@ -70,8 +69,8 @@ def main() -> None:
         "vix": vix,
     }
 
-    now = datetime.now()
-    generated_at = now.strftime("%Y-%m-%d %H:%M:%S")
+    now = clock.now()
+    generated_at = clock.timestamp(now)
     briefs = []
     for sym in tickers:
         if sym not in history:
@@ -111,7 +110,7 @@ def main() -> None:
         raise SystemExit("No briefs produced — check the tickers.")
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    stamp = now.strftime("%Y-%m-%d_%H%M%S")
+    stamp = clock.file_stamp(now)
     md_path = os.path.join(OUT_DIR, f"pretrade_{stamp}.md")
     json_path = os.path.join(OUT_DIR, f"pretrade_{stamp}.json")
     pretrade_report.generate(md_path, json_path, generated_at, briefs)

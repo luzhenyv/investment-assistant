@@ -17,6 +17,8 @@ from typing import Callable
 
 import polars as pl
 
+from quant import clock
+
 CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "cache"
 
 
@@ -34,7 +36,9 @@ def _newest(symbol: str) -> Path | None:
 
 
 def _written_today(path: Path) -> bool:
-    return dt.date.fromtimestamp(path.stat().st_mtime) == dt.date.today()
+    # Compare in UTC (project convention) so cache freshness is identical regardless of run timezone.
+    written = dt.datetime.fromtimestamp(path.stat().st_mtime, dt.timezone.utc).date()
+    return written == clock.today()
 
 
 def write_cache(symbol: str, df: pl.DataFrame) -> Path:
@@ -53,14 +57,19 @@ def load_or_fetch(
     symbol: str,
     fetch: Callable[[], pl.DataFrame | None],
     min_rows: int = 200,
+    force_refresh: bool = False,
 ) -> pl.DataFrame | None:
-    """Return a cached-or-freshly-downloaded frame, or None if nothing is usable."""
+    """Return a cached-or-freshly-downloaded frame, or None if nothing is usable.
+
+    `force_refresh=True` skips the reuse-if-written-today shortcut and always attempts a fresh
+    download (the daily review needs today's bar even if an earlier run cached a stale file today).
+    The download-failure fallback to the newest valid cache is preserved either way."""
 
     def valid(df: pl.DataFrame | None) -> bool:
         return df is not None and df.height >= min_rows
 
     newest = _newest(symbol)
-    if newest is not None and _written_today(newest):
+    if not force_refresh and newest is not None and _written_today(newest):
         cached = pl.read_parquet(newest)
         if valid(cached):
             return cached

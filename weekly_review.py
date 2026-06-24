@@ -5,12 +5,11 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
 
 import yaml
 
 from quant import (
-    decision, market, option_flow, options, portfolio, profiles, providers, report, roles,
+    clock, decision, market, option_flow, options, portfolio, profiles, providers, report, roles,
     scoring, valuation,
 )
 
@@ -144,7 +143,7 @@ def main() -> None:
             if chain and (leg.right, float(leg.strike)) in chain:
                 ivs[(leg.right, float(leg.strike), expiry)] = chain[(leg.right, float(leg.strike))]
         option_analyses.append(
-            options.analyze(s, signals[s.underlying].price, datetime.now().date(), ivs, r)
+            options.analyze(s, signals[s.underlying].price, clock.today(), ivs, r)
         )
 
     # Option-chain positioning (report-only) for the actionable set: held + watchlist names.
@@ -167,9 +166,9 @@ def main() -> None:
                 roleviews[sym] = roles.build(sym, signals[sym], fundamentals.get(sym), cfg)
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    now = datetime.now()
-    generated_at = now.strftime("%Y-%m-%d %H:%M:%S")  # in-file header + JSON field
-    stamp = now.strftime("%Y-%m-%d_%H%M%S")           # filename suffix (sortable, no colons)
+    now = clock.now()
+    generated_at = clock.timestamp(now)   # in-file header + JSON field (UTC)
+    stamp = clock.file_stamp(now)         # filename suffix (sortable, no colons; UTC)
     md_path = os.path.join(OUT_DIR, f"weekly_report_{stamp}.md")
     json_path = os.path.join(OUT_DIR, f"weekly_report_{stamp}.json")
     report.generate(

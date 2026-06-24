@@ -14,13 +14,12 @@ from __future__ import annotations
 import glob
 import os
 import subprocess
-from datetime import datetime
 
 import polars as pl
 import yaml
 
 from quant import (
-    daily_report, decision, market, observations, option_flow, options, portfolio, profiles,
+    clock, daily_report, decision, market, observations, option_flow, options, portfolio, profiles,
     providers, roles, scoring, valuation,
 )
 
@@ -55,11 +54,24 @@ def _day_change(df: pl.DataFrame) -> float | None:
     return float(close.tail(1).item()) / prev - 1.0 if prev else None
 
 
+def _last_bar(df: pl.DataFrame) -> dict:
+    """The latest daily bar (date + OHLCV) for human verification of the record."""
+    last = df.tail(1)
+    return {
+        "bar_date": str(last["date"].item()),
+        "open": round(float(last["Open"].item()), 2),
+        "high": round(float(last["High"].item()), 2),
+        "low": round(float(last["Low"].item()), 2),
+        "close": round(float(last["Close"].item()), 2),
+        "volume": round(float(last["Volume"].item())),
+    }
+
+
 def _prior_states() -> dict[str, str]:
     """Load the most recent prior daily parquet (before today) → {symbol: state}, for
     detecting state flips. Empty dict on the first run / no prior file."""
     files = sorted(glob.glob(os.path.join(STORE, "*.parquet")))
-    today = f"{datetime.now():%Y-%m-%d}.parquet"
+    today = f"{clock.datestamp()}.parquet"
     prior = [f for f in files if os.path.basename(f) < today]
     if not prior:
         return {}
@@ -78,8 +90,10 @@ def main() -> None:
     print(f"Fetching data for {len(symbols)} symbols + SPY/QQQ/VIX ...")
 
     data_cfg = cfg["data"]
+    # Force a fresh fetch: the daily review runs after the close and must capture TODAY's bar even if
+    # an earlier same-day run cached a file holding only the prior session (see cache.load_or_fetch).
     history = providers.fetch_history(
-        symbols + ["SPY", "QQQ"], data_cfg["period"], data_cfg["min_rows"]
+        symbols + ["SPY", "QQQ"], data_cfg["period"], data_cfg["min_rows"], force_refresh=True
     )
     vix = providers.fetch_vix(data_cfg["period"])
     sectors = providers.fetch_sectors(symbols)
@@ -171,7 +185,7 @@ def main() -> None:
             if chain and (leg.right, float(leg.strike)) in chain:
                 ivs[(leg.right, float(leg.strike), expiry)] = chain[(leg.right, float(leg.strike))]
         option_analyses.append(
-            options.analyze(s, signals[s.underlying].price, datetime.now().date(), ivs, r)
+            options.analyze(s, signals[s.underlying].price, clock.today(), ivs, r)
         )
 
     actionable = {r.symbol for r in holding_recs} | {r.symbol for r in watchlist_recs}
@@ -201,15 +215,25 @@ def main() -> None:
     prior_states = _prior_states()
     overbought = cfg["scoring"]["rsi_overbought"]
     oversold = cfg["scoring"]["rsi_oversold"]
-    now = datetime.now()
-    as_of_date = now.strftime("%Y-%m-%d")
-    generated_at = now.strftime("%Y-%m-%d %H:%M:%S")
+    now = clock.now()
+    as_of_date = clock.datestamp(now)
+    generated_at = clock.timestamp(now)
 
     # Provenance: stamp every row with the code + hyperparameter set that produced it, and snapshot
     # the resolved config to a sidecar so a historical decision can be replayed / re-optimized later.
     git_sha = _git_sha(ROOT)
     config_hash = observations.record_run_meta(STORE, as_of_date, cfg, git_sha, generated_at)
     holdings_count = len(holdings)
+
+    # Raw daily bar per symbol (date + OHLCV) for verification, and a freshness check: the close is
+    # only "today's" if the latest bar IS today. Warn loudly otherwise (market still open / weekend /
+    # holiday / vendor lag) so a stale prior-session close isn't mistaken for the session just closed.
+    ohlcv = {sym: _last_bar(history[sym]) for sym in signals}
+    as_of_bar = max((b["bar_date"] for b in ohlcv.values()), default=as_of_date)
+    stale = as_of_bar < as_of_date
+    if stale:
+        print(f"  ⚠ latest daily bar is {as_of_bar}, not today {as_of_date} — close is the PRIOR "
+              f"session (market still open, weekend/holiday, or vendor lag). Run after the close.")
 
     rows, outliers = [], []
     for sym in sorted(signals):
@@ -267,6 +291,9 @@ def main() -> None:
             "rev_growth": f.rev_growth if f else None, "eps_growth": f.eps_growth if f else None,
             # reproducibility
             "git_sha": git_sha, "config_hash": config_hash,
+            # raw daily bar for verification (close == price, volume == volume above)
+            "bar_date": ohlcv[sym]["bar_date"], "open": ohlcv[sym]["open"],
+            "high": ohlcv[sym]["high"], "low": ohlcv[sym]["low"],
         })
 
         prev = prior_states.get(sym)
@@ -287,7 +314,7 @@ def main() -> None:
             })
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    stamp = now.strftime("%Y-%m-%d_%H%M%S")
+    stamp = clock.file_stamp(now)
     md_path = os.path.join(OUT_DIR, f"daily_review_{stamp}.md")
     json_path = os.path.join(OUT_DIR, f"daily_review_{stamp}.json")
     # Report shows positioning for the actionable set only (keeps the .md focused); the full
@@ -296,6 +323,7 @@ def main() -> None:
     daily_report.generate(
         md_path, json_path, generated_at, mkt, holding_recs, watchlist_recs, option_analyses,
         summary, fundamentals, report_positioning, roleviews, outliers,
+        ohlcv=ohlcv, as_of_bar=as_of_bar, stale=stale,
     )
     print(f"Report written to {md_path}")
     print(f"  {len(outliers)} outlier(s) flagged")
