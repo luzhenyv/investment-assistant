@@ -1,6 +1,6 @@
 """Accumulate one comprehensive observation row per symbol into a growing parquet 'database'.
 
-    data/daily_observations/<profile>/<YYYY-MM-DD>.parquet   # one file per trading day, one row/symbol
+    data/daily_observations/<profile>/<bar_date>.parquet   # one file per session, one row/symbol
 
 This is the point of the daily review: weekly_review/pretrade emit throwaway timestamped reports, but
 here we persist a flat, wide time series — every indicator, score, option-positioning level, valuation
@@ -11,8 +11,8 @@ LABEL whose confidence can later be reviewed against forward returns (meta-label
 Data-management conventions mirror quant/cache.py and scripts/snapshot_options.py: per-period parquet
 files discovered by glob, and an EXPLICIT column→dtype schema so every daily file is identical in shape
 even when a column is all-null that day. That stability is what lets the whole history load + concat in
-one line: `pl.read_parquet("data/daily_observations/<profile>/*.parquet")`. Same-day re-run overwrites
-(last run wins; no duplicate rows).
+one line: `pl.read_parquet("data/daily_observations/<profile>/*.parquet")`. Files are keyed by the
+session's `bar_date`; a re-run for the same session overwrites (last run wins; no duplicate rows).
 """
 from __future__ import annotations
 
@@ -30,8 +30,8 @@ _I = pl.Int64
 # Explicit schema = stable columns/dtypes across days (clean glob-concat). Order is the on-disk order;
 # keep additive (append new columns at the end) so older files still read back.
 SCHEMA: dict[str, pl.DataType] = {
-    # identity / market context
-    "as_of_date": _S, "symbol": _S, "membership": _S,   # membership: holding | watchlist | underlying
+    # identity / market context (create_time = run timestamp 'YYYY-MM-DD HH:MM:SS UTC'; bar_date below = session)
+    "create_time": _S, "symbol": _S, "membership": _S,   # membership: holding | watchlist | underlying
     "regime": _S, "bull_score": _F, "vix": _F,
     # price / volume (incl. the abnormal-volume overlay)
     "price": _F, "day_change_pct": _F, "volume": _F, "rvol": _F, "vol_z": _F, "vol_state": _S,
@@ -66,35 +66,35 @@ SCHEMA: dict[str, pl.DataType] = {
 }
 
 
-def record_run_meta(store_dir: str, as_of_date: str, cfg: dict, git_sha: str | None,
+def record_run_meta(store_dir: str, bar_date: str, cfg: dict, git_sha: str | None,
                     generated_at: str) -> str:
     """Snapshot the hyperparameters in force at this run so any historical decision is reproducible.
 
-    Writes <store_dir>/_runs/<as_of_date>.json = {as_of_date, generated_at, git_sha, config_hash,
+    Writes <store_dir>/_runs/<bar_date>.json = {bar_date, create_time, git_sha, config_hash,
     config} and returns a short `config_hash` of the resolved config. The hash is stable while the
     config is unchanged (easy grouping of 'which threshold set produced these decisions'), and the
     `_runs/` subdir is invisible to the `*.parquet` glob so the panel load is unaffected. Idempotent
-    per date (overwrite)."""
+    per session (overwrite)."""
     runs_dir = os.path.join(store_dir, "_runs")
     os.makedirs(runs_dir, exist_ok=True)
     canonical = json.dumps(cfg, sort_keys=True, default=str)
     config_hash = hashlib.sha1(canonical.encode()).hexdigest()[:12]
-    payload = {"as_of_date": as_of_date, "generated_at": generated_at, "git_sha": git_sha,
+    payload = {"bar_date": bar_date, "create_time": generated_at, "git_sha": git_sha,
                "config_hash": config_hash, "config": cfg}
-    with open(os.path.join(runs_dir, f"{as_of_date}.json"), "w") as f:
+    with open(os.path.join(runs_dir, f"{bar_date}.json"), "w") as f:
         json.dump(payload, f, indent=2, default=str)
     return config_hash
 
 
-def record(store_dir: str, as_of_date: str, rows: list[dict]) -> str:
-    """Write `rows` (one dict per symbol) to <store_dir>/<as_of_date>.parquet under the fixed SCHEMA.
+def record(store_dir: str, bar_date: str, rows: list[dict]) -> str:
+    """Write `rows` (one dict per symbol) to <store_dir>/<bar_date>.parquet under the fixed SCHEMA.
 
-    Idempotent per date: a same-day re-run overwrites the file (last run wins). Each row dict may omit
-    keys → they land as null. Returns a short status string for the caller to print."""
+    Idempotent per session: a re-run for the same session overwrites the file (last run wins). Each row
+    dict may omit keys → they land as null. Returns a short status string for the caller to print."""
     if not rows:
         return "no rows — nothing written"
     os.makedirs(store_dir, exist_ok=True)
-    out_path = os.path.join(store_dir, f"{as_of_date}.parquet")
+    out_path = os.path.join(store_dir, f"{bar_date}.parquet")
     existed = os.path.exists(out_path)
     # Normalize every row to exactly the schema keys (missing → None) so the frame matches SCHEMA.
     norm = [{c: r.get(c) for c in SCHEMA} for r in rows]

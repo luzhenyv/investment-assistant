@@ -67,12 +67,12 @@ def _last_bar(df: pl.DataFrame) -> dict:
     }
 
 
-def _prior_states() -> dict[str, str]:
-    """Load the most recent prior daily parquet (before today) → {symbol: state}, for
+def _prior_states(as_of_bar: str) -> dict[str, str]:
+    """Load the most recent prior daily parquet (before this session) → {symbol: state}, for
     detecting state flips. Empty dict on the first run / no prior file."""
     files = sorted(glob.glob(os.path.join(STORE, "*.parquet")))
-    today = f"{clock.datestamp()}.parquet"
-    prior = [f for f in files if os.path.basename(f) < today]
+    current = f"{as_of_bar}.parquet"
+    prior = [f for f in files if os.path.basename(f) < current]
     if not prior:
         return {}
     df = pl.read_parquet(prior[-1])
@@ -212,28 +212,30 @@ def main() -> None:
     # --- Daily additions: comprehensive observation rows (the database) + outliers (skill entry) ---
     rec_by_sym = {r.symbol: r for r in holding_recs + watchlist_recs}
     watch_set = set(watch)
-    prior_states = _prior_states()
     overbought = cfg["scoring"]["rsi_overbought"]
     oversold = cfg["scoring"]["rsi_oversold"]
     now = clock.now()
     as_of_date = clock.datestamp(now)
     generated_at = clock.timestamp(now)
 
-    # Provenance: stamp every row with the code + hyperparameter set that produced it, and snapshot
-    # the resolved config to a sidecar so a historical decision can be replayed / re-optimized later.
-    git_sha = _git_sha(ROOT)
-    config_hash = observations.record_run_meta(STORE, as_of_date, cfg, git_sha, generated_at)
-    holdings_count = len(holdings)
-
     # Raw daily bar per symbol (date + OHLCV) for verification, and a freshness check: the close is
     # only "today's" if the latest bar IS today. Warn loudly otherwise (market still open / weekend /
     # holiday / vendor lag) so a stale prior-session close isn't mistaken for the session just closed.
+    # as_of_bar (the session) keys the file/sidecar below, so it must be resolved before they are written.
     ohlcv = {sym: _last_bar(history[sym]) for sym in signals}
     as_of_bar = max((b["bar_date"] for b in ohlcv.values()), default=as_of_date)
     stale = as_of_bar < as_of_date
     if stale:
         print(f"  ⚠ latest daily bar is {as_of_bar}, not today {as_of_date} — close is the PRIOR "
               f"session (market still open, weekend/holiday, or vendor lag). Run after the close.")
+
+    prior_states = _prior_states(as_of_bar)
+
+    # Provenance: stamp every row with the code + hyperparameter set that produced it, and snapshot
+    # the resolved config to a sidecar so a historical decision can be replayed / re-optimized later.
+    git_sha = _git_sha(ROOT)
+    config_hash = observations.record_run_meta(STORE, as_of_bar, cfg, git_sha, generated_at)
+    holdings_count = len(holdings)
 
     rows, outliers = [], []
     for sym in sorted(signals):
@@ -247,7 +249,7 @@ def main() -> None:
         membership = "holding" if sym in holdings else "watchlist" if sym in watch_set else "underlying"
         target_weight = decision.effective_target(sym, cfg)
         rows.append({
-            "as_of_date": as_of_date, "symbol": sym, "membership": membership,
+            "create_time": generated_at, "symbol": sym, "membership": membership,
             "regime": mkt.regime, "bull_score": round(mkt.bull_score, 1), "vix": round(vix, 1),
             "price": round(s.price, 2), "day_change_pct": _day_change(history[sym]),
             "volume": round(s.volume), "rvol": round(s.rvol, 2), "vol_z": round(s.vol_z, 2),
@@ -327,7 +329,7 @@ def main() -> None:
     )
     print(f"Report written to {md_path}")
     print(f"  {len(outliers)} outlier(s) flagged")
-    print("  " + observations.record(STORE, as_of_date, rows))
+    print("  " + observations.record(STORE, as_of_bar, rows))
 
 
 if __name__ == "__main__":

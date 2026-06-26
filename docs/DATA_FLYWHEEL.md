@@ -82,7 +82,7 @@ row + the config snapshot, the decision can be re-derived (and re-optimized).
 
 The deferred grader. Turns stored decisions into a measurable quality signal.
 
-- [ ] **`evaluate.py`** — for each stored `(as_of_date, symbol, intent, state)`, join the realized
+- [ ] **`evaluate.py`** — for each stored `(bar_date, symbol, intent, state)`, join the realized
       forward return at +5 / +20 / +60 trading days. Reuse the price cache `data/cache/*.parquet`
       with `quant/backtest.py::_price_as_of` and `quant/indicators.py::trailing_return`.
 - [ ] **Outcome columns (the `y`)** — `fwd_return_5d/20d/60d`, plus a per-intent **hit/miss** under a
