@@ -80,6 +80,10 @@ def _scores(sig: Signal, sector: str | None = None) -> dict:
         "rvol": round(sig.rvol, 2),
         "vol_z": round(sig.vol_z, 2),
         "vol_state": sig.vol_state,
+        "macd_hist": round(sig.macd_hist, 3),
+        "bb_pct_b": round(sig.bb_pct_b, 2),
+        "bb_squeeze": sig.bb_squeeze,
+        "macd_divergence": sig.macd_divergence,
     }
     if sector:
         scores["sector"] = sector
@@ -177,15 +181,20 @@ def decide_holding(
             **base,
         )
 
-    # 6. At/above target and extended => sell premium for income.
+    # 6. At/above target and extended => sell premium for income. "Extended" is RSI > overbought
+    #    OR price riding/above the upper Bollinger band (%B >= bb_extended) — the band catches
+    #    extension that Wilder's smoother RSI can under-flag.
+    bb_extended = cfg["scoring"].get("bb_extended", 1.0)
+    stretched = sig.rsi > overbought or sig.bb_pct_b >= bb_extended
     if (
         current_weight >= target_weight
-        and sig.rsi > overbought
+        and stretched
         and market.regime in CALM_REGIMES
     ):
+        tag = f"RSI {sig.rsi:.0f}" if sig.rsi > overbought else f"%B {sig.bb_pct_b:.2f}"
         return Recommendation(
             intent="Generate Income",
-            reason=f"Extended (RSI {sig.rsi:.0f}) and at target — sell premium. "
+            reason=f"Extended ({tag}) and at target — sell premium. "
             "Heuristic: no IV data in v0.1.",
             **base,
         )

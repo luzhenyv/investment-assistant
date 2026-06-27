@@ -25,6 +25,20 @@ scoring:
   pullback_atr_mult: 0.5  # price within this many ATRs of MA50 => "pullback"
   accel_rsi: 62           # trend>=75 + (breakout or RSI>=this) => Trend Acceleration
   rs_lookback: 126        # trailing-return window for relative strength (~6 months)
+  # MACD momentum confirmation for Trend Acceleration
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal_span: 9
+  accel_macd_mode: confirm    # confirm (AND hist>0) | broaden (OR hist>0) | off
+  # Bollinger squeeze + %B
+  bb_window: 20
+  bb_k: 2.0
+  bb_squeeze_lookback: 120
+  bb_squeeze_q: 0.15          # bandwidth in bottom 15% of lookback => squeeze
+  bb_extended: 1.0            # %B >= this (riding/above upper band) => extended (income rule)
+  # MACD divergence (soft, report-only)
+  macd_div_pivot_k: 5         # centered fractal half-window (2k+1) for swing pivots
+  macd_div_lookback: 120      # only consider pivots within this many bars
 
 # Abnormal-volume overlay (quant/scoring.py). Report-only — never feeds trend/momentum/state.
 # RVOL = today / prior-lookback avg; vol_z = z-score over that window. Used by the daily review.

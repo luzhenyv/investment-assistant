@@ -12,12 +12,12 @@ CFG = {
 
 
 def sig(symbol="X", price=100, ma50=100, ma200=90, rsi=55, pullback=False, breakout=False,
-        trend=100, momentum=60, state="Range", rs=0.0):
+        trend=100, momentum=60, state="Range", rs=0.0, bb_pct_b=0.5):
     return Signal(
         symbol=symbol, price=price, ma20=price, ma50=ma50, ma200=ma200, rsi=rsi,
         atr=5, high_52w=price, low_52w=price * 0.5,
         trend_score=trend, momentum_score=momentum, pullback=pullback, breakout=breakout,
-        state=state, rs=rs,
+        state=state, rs=rs, bb_pct_b=bb_pct_b,
     )
 
 
@@ -111,6 +111,12 @@ def test_no_add_core_when_underweight_but_cash_low():
 
 def test_generate_income_when_extended_at_target():
     r = decide(sig(rsi=75), hold(core=10), BULL, cw=0.10, tw=0.10)
+    assert r.intent == "Generate Income"
+
+
+def test_generate_income_when_pct_b_extended_even_if_rsi_calm():
+    # RSI below overbought but price riding the upper Bollinger band (%B >= 1.0) => extended.
+    r = decide(sig(rsi=60, bb_pct_b=1.05), hold(core=10), BULL, cw=0.10, tw=0.10)
     assert r.intent == "Generate Income"
 
 

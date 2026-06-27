@@ -60,18 +60,33 @@ def asset_state(
     pullback: bool,
     breakout: bool,
     accel_rsi: float,
+    macd_hist: float = 0.0,
+    accel_macd_mode: str = "confirm",
 ) -> str:
     """Classify a symbol into one discrete state for strategy routing.
 
     First-match ladder, derived only from already-computed fields. The state lets
     momentum and mean-reversion rules coexist by never applying to the same symbol
-    in the same week."""
+    in the same week.
+
+    `accel_macd_mode` wires the MACD histogram into the Trend Acceleration gate:
+    'confirm' (default) requires positive momentum (macd_hist > 0) ON TOP of the
+    trend/breakout/RSI trigger, so a hot-RSI name whose momentum is rolling over falls
+    back to Trend Mature; 'broaden' adds macd_hist > 0 as an extra OR trigger; 'off'
+    keeps the legacy trend/breakout/RSI-only gate."""
     if price < ma200 or trend <= 25:
         return "Broken"                # lost the long-term trend
     if pullback:
         return "Mean Reversion"        # intact stack, dipping to MA50 -> buy weakness
-    if trend >= 75 and (breakout or rsi >= accel_rsi):
-        return "Trend Acceleration"    # strong + new high / hot -> add to strength
+    trigger = breakout or rsi >= accel_rsi
+    if accel_macd_mode == "confirm":
+        accelerating = trigger and macd_hist > 0
+    elif accel_macd_mode == "broaden":
+        accelerating = trigger or macd_hist > 0
+    else:
+        accelerating = trigger
+    if trend >= 75 and accelerating:
+        return "Trend Acceleration"    # strong + new high / hot + momentum -> add to strength
     if trend >= 75:
         return "Trend Mature"          # strong stack but not accelerating
     return "Range"
@@ -92,12 +107,25 @@ def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
     atr_val = indicators.atr(high, low, close)
     hi = indicators.high_52w(high)
     lo = indicators.low_52w(low)
-    atr_mult = cfg["scoring"]["pullback_atr_mult"]
-    accel_rsi = cfg["scoring"].get("accel_rsi", 62)
-    rs = indicators.trailing_return(close, cfg["scoring"].get("rs_lookback", 126))
+    sc = cfg["scoring"]
+    atr_mult = sc["pullback_atr_mult"]
+    accel_rsi = sc.get("accel_rsi", 62)
+    rs = indicators.trailing_return(close, sc.get("rs_lookback", 126))
     vol_lookback = cfg.get("volume", {}).get("lookback", 20)
     rvol = indicators.rvol(vol, vol_lookback)
     vol_z = indicators.volume_zscore(vol, vol_lookback)
+    macd_line, macd_sig, macd_hist = indicators.macd(
+        close, sc.get("macd_fast", 12), sc.get("macd_slow", 26), sc.get("macd_signal_span", 9)
+    )
+    bb_bw, bb_pct_b, bb_squeeze = indicators.bollinger(
+        close, sc.get("bb_window", 20), sc.get("bb_k", 2.0),
+        sc.get("bb_squeeze_lookback", 120), sc.get("bb_squeeze_q", 0.15),
+    )
+    divergence = indicators.macd_divergence(
+        close, high, low, sc.get("macd_fast", 12), sc.get("macd_slow", 26),
+        sc.get("macd_signal_span", 9), sc.get("macd_div_pivot_k", 5),
+        sc.get("macd_div_lookback", 120),
+    )
     trend = trend_score(price, ma20, ma50, ma200)
     pullback = is_pullback(price, ma50, atr_val, atr_mult)
     breakout = is_breakout(price, hi)
@@ -115,10 +143,20 @@ def build_signal(symbol: str, df: pl.DataFrame, cfg: dict) -> Signal:
         momentum_score=momentum_score(rsi_val),
         pullback=pullback,
         breakout=breakout,
-        state=asset_state(price, ma200, trend, rsi_val, pullback, breakout, accel_rsi),
+        state=asset_state(
+            price, ma200, trend, rsi_val, pullback, breakout, accel_rsi,
+            macd_hist, sc.get("accel_macd_mode", "confirm"),
+        ),
         rs=rs,
         volume=float(vol.tail(1).item()),
         rvol=rvol,
         vol_z=vol_z,
         vol_state=volume_state(vol_z, cfg),
+        macd=macd_line,
+        macd_signal=macd_sig,
+        macd_hist=macd_hist,
+        bb_bandwidth=bb_bw,
+        bb_pct_b=bb_pct_b,
+        bb_squeeze=bb_squeeze,
+        macd_divergence=divergence,
     )

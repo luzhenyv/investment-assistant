@@ -63,6 +63,9 @@ SCHEMA: dict[str, pl.DataType] = {
     "git_sha": _S, "config_hash": _S,
     # raw daily bar for human verification (which session + the day's OHLCV; close == price above)
     "bar_date": _S, "open": _F, "high": _F, "low": _F,
+    # momentum/volatility indicators (appended; macd_hist gates Trend Acceleration, rest are soft)
+    "macd": _F, "macd_signal": _F, "macd_hist": _F,
+    "bb_bandwidth": _F, "bb_pct_b": _F, "bb_squeeze": _B, "macd_divergence": _S,
 }
 
 

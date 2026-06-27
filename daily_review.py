@@ -296,6 +296,11 @@ def main() -> None:
             # raw daily bar for verification (close == price, volume == volume above)
             "bar_date": ohlcv[sym]["bar_date"], "open": ohlcv[sym]["open"],
             "high": ohlcv[sym]["high"], "low": ohlcv[sym]["low"],
+            # momentum/volatility indicators
+            "macd": round(s.macd, 3), "macd_signal": round(s.macd_signal, 3),
+            "macd_hist": round(s.macd_hist, 3), "bb_bandwidth": round(s.bb_bandwidth, 4),
+            "bb_pct_b": round(s.bb_pct_b, 3), "bb_squeeze": s.bb_squeeze,
+            "macd_divergence": s.macd_divergence,
         })
 
         prev = prior_states.get(sym)
@@ -308,11 +313,17 @@ def main() -> None:
             flags.append("RSI overbought")
         elif s.rsi <= oversold:
             flags.append("RSI oversold")
+        if s.bb_squeeze:
+            flags.append("Bollinger squeeze (breakout pending)")
+        if s.macd_divergence != "none":
+            flags.append(f"{s.macd_divergence} MACD divergence")
         if flags:
             outliers.append({
                 "symbol": sym, "flags": flags, "day_change_pct": _day_change(history[sym]),
                 "rvol": round(s.rvol, 2), "vol_z": round(s.vol_z, 2), "vol_state": s.vol_state,
                 "state": s.state, "prev_state": prev, "rsi": round(s.rsi, 1), "intent": intent,
+                "macd_hist": round(s.macd_hist, 3), "bb_pct_b": round(s.bb_pct_b, 3),
+                "macd_divergence": s.macd_divergence,
             })
 
     os.makedirs(OUT_DIR, exist_ok=True)

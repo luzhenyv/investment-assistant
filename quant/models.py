@@ -34,6 +34,13 @@ class Signal:
     rvol: float = 1.0      # relative volume: today / prior-lookback avg (1.0 = average)
     vol_z: float = 0.0     # volume z-score over the prior lookback (the 'abnormal' measure)
     vol_state: str = "Normal"  # Normal | Elevated | Abnormal (off vol_z, see scoring.volume_state)
+    macd: float = 0.0          # MACD line (fast EMA - slow EMA)
+    macd_signal: float = 0.0   # MACD signal line (EMA of the MACD line)
+    macd_hist: float = 0.0     # MACD histogram (line - signal); gates Trend Acceleration
+    bb_bandwidth: float = 0.0  # Bollinger band width / mid (volatility-normalized)
+    bb_pct_b: float = 0.5      # %B: price position in the band (>1 above upper, <0 below lower)
+    bb_squeeze: bool = False   # bandwidth in the bottom squeeze_q of its lookback (coiling)
+    macd_divergence: str = "none"  # none | bullish | bearish (MACD line vs price, soft flag)
 
 
 @dataclass
