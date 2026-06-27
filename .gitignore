@@ -18,3 +18,4 @@ data/options_snapshots
 # Accumulating daily observation store (generated; the <profile>/stocks slice is real-portfolio
 # derived). Back it up locally — never push it to this remote.
 data/daily_observations/
+.DS_Store
