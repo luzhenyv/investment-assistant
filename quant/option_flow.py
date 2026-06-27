@@ -167,7 +167,7 @@ def analyze(symbol: str, spot: float, df, cfg: dict) -> OptionPositioning | None
     expiry = providers.pick_monthly_expiry(symbol, op.get("dte_lo", 25), op.get("dte_hi", 45))
     if expiry is None:
         return None
-    grid = providers.fetch_chain_grid(symbol, expiry)
+    grid = providers.fetch_option_grid(symbol, expiry)
     if grid is None:
         return None
 

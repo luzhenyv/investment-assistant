@@ -15,8 +15,8 @@ def test_yf_and_av_map_to_same_canonical_keys():
         "QuarterlyRevenueGrowthYOY": "1.963", "QuarterlyEarningsGrowthYOY": "7.56",
         "AnalystTargetPrice": "945.6", "Beta": "2.173",
     }
-    yf_c = providers._map_yf_info(yf_info)
-    av_c = providers._map_av_overview(av_overview)
+    yf_c = providers._map_yf(yf_info)
+    av_c = providers._map_av(av_overview)
     # Both produce exactly the canonical key set
     assert set(yf_c) == set(providers._FUND_KEYS)
     assert set(av_c) == set(providers._FUND_KEYS)
@@ -27,11 +27,11 @@ def test_yf_and_av_map_to_same_canonical_keys():
 
 def test_yf_peg_falls_back_to_pegRatio():
     info = {"pegRatio": 0.65}  # no trailingPegRatio
-    assert providers._map_yf_info(info)["peg"] == 0.65
+    assert providers._map_yf(info)["peg"] == 0.65
 
 
 def test_yf_missing_fields_become_none():
-    c = providers._map_yf_info({"trailingPE": 20.0})
+    c = providers._map_yf({"trailingPE": 20.0})
     assert c["pe"] == 20.0
     assert c["forward_pe"] is None and c["analyst_target"] is None and c["peg"] is None
 
