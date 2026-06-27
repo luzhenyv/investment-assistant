@@ -1,0 +1,23 @@
+{
+  "skill_name": "weekly-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Here's my latest weekly report in output/stocks/. Evaluate my portfolio — what should I do this week?",
+      "expected_output": "Prioritized action list grounded in the report: closes, the true post-close cash %, buy-signal quality calls, options, and the biggest lever.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Why did the watchlist come back empty in this week's stocks report?",
+      "expected_output": "Diagnoses false-empty (open_slots = max_positions - holdings counting to-be-closed names) vs genuine (quality floor / weak regime).",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "The report says Add Core on HIMS. Is that a good buy?",
+      "expected_output": "Cross-horizon read: Acceleration via RSI-only branch (short-term) but negative 6-month rs = chasing a bounce; flags it as the weakest buy, notes avg_cost.",
+      "files": []
+    }
+  ]
+}
