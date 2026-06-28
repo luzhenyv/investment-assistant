@@ -17,6 +17,7 @@ def load_portfolio(path: str) -> tuple[float, dict[str, Holding]]:
             core=float(pos.get("core", 0)),
             trading=float(pos.get("trading", 0)),
             avg_cost=float(pos.get("avg_cost", 0)),
+            plan=str(pos.get("plan", "")).strip(),
         )
     return cash, holdings
 

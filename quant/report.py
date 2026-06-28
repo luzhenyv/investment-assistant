@@ -125,6 +125,9 @@ def _recs_notes(
                 parts.append("playbook: " + ", ".join(rv.playbook))
         if r.strategy_hint:
             parts.append("express: " + ", ".join(r.strategy_hint))
+        if rv is not None and rv.user_plan:
+            engine = f"{rv.role} · {rv.horizon}" if rv.horizon and rv.horizon != "—" else rv.role
+            parts.append(f"📝 your plan: {rv.user_plan} (engine: {engine})")
         if parts:
             lines.append(f"- **{r.symbol}** — " + " · ".join(parts))
     if lines:

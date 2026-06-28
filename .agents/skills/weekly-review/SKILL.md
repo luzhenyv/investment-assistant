@@ -11,9 +11,10 @@ or explain *why*. Your job is that judgment layer — turn the report into a sho
 list, and surface the opportunities and traps the mechanical pass misses.
 
 **Locate first** (newest wins): `output/<profile>/weekly_report_*.md` and its sibling `.json` (the
-JSON carries `dollar_gap`, `weights`/`cash_frac`, per-symbol `scores`). Ground every "why" in the
-engine code — `quant/scoring.py` (signal defs) and `quant/decision.py` (the rule ladder) — so
-explanations are accurate, not remembered. Skim them; don't trust memory of thresholds.
+JSON carries `dollar_gap`, `weights`/`cash_frac`, per-symbol `scores`, and `roles.<SYM>` with the
+engine's `role`/`horizon`/`tp_price`/`sl_price` plus the human's `user_plan` when set). Ground every
+"why" in the engine code — `quant/scoring.py` (signal defs) and `quant/decision.py` (the rule ladder)
+— so explanations are accurate, not remembered. Skim them; don't trust memory of thresholds.
 
 ## Signals — what each measures (horizon disagreement is where the insight is)
 - `trend` (0–100): +25 each for price>MA20, MA20>MA50, MA50>MA200, price>MA200. Structure.
@@ -36,6 +37,13 @@ was a real AI-memory melt-up. Verify, don't assume.) The same verify-against-a-s
 applies to any catalyst you cite in item 7 — link it or drop it.
 
 ## Checklist — verdict + one-line WHY for each
+0. **Plan vs engine (lead with this when it diverges).** For any held name with a `user_plan`
+   (`roles.<SYM>.user_plan`, also shown as "📝 your plan" in the .md), compare the human's intent
+   against the engine's `role`/`horizon`/intent/TP-SL. The engine is mechanical and blind to the
+   user's thesis — it will flip a name the user holds as a `core` compounder to `avoid`/`Close` on a
+   MA200 cross. The user's plan, in turn, may be stale vs the tape. **Surface the conflict and give
+   the tradeoff** (what would have to be true for each side to be right, and what to watch) — don't
+   silently defer to either the engine or the plan. Agreement is worth one line; divergence leads.
 1. **Action-list integrity.** Sum the `Close` `dollar_gap`s and recompute *true* post-close cash %.
    The report's "deploy $X"/cash line is computed before the Closes — if they raise a lot, the real
    picture is far more cash, not less. State the true number.

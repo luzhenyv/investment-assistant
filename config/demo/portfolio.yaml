@@ -18,6 +18,12 @@
 #   avg_cost  Average cost basis per share. INFORMATIONAL ONLY — for your own P&L
 #             reference. No decision or scoring logic reads it.
 #
+#   plan      Your own one-line plan for this name — intended role/horizon, target,
+#             conditions, thesis. FREEFORM and OPTIONAL. No engine logic reads it; it's
+#             surfaced in the weekly report (a "📝 your plan" note next to the engine's
+#             "Role · Horizon") and in the JSON, so the weekly-review LLM can flag where
+#             your intent and the engine diverge. Use a YAML block (>) to go multi-line.
+#
 # NOTES
 #   • Position weight is computed from total shares = core + trading (models.py).
 #     The core/trading split only changes behavior under stress, not your target size.
@@ -27,6 +33,13 @@ cash: 30000
 
 positions:
   # SYMBOL: { core: <shares>, trading: <shares>, avg_cost: <price/share> }
-  MSFT: { core: 100, trading: 20, avg_cost: 425 }
+  # Inline form, or the expanded form below when you want to attach a `plan`.
+  MSFT:
+    core: 100
+    trading: 20
+    avg_cost: 425
+    plan: >
+      Core compounder — Azure/Copilot thesis. Hold through trend wobbles; only exit on a
+      real fundamental break (capex/cloud-growth crack), not on a MA200 cross.
   NVDA: { core: 30,  trading: 0,  avg_cost: 155 }
   GOOG: { core: 20,  trading: 10, avg_cost: 171 }

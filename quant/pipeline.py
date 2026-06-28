@@ -238,6 +238,8 @@ def run(
         for sym in role_syms:
             if sym in signals:
                 roleviews[sym] = roles.build(sym, signals[sym], fundamentals.get(sym), cfg)
+                if sym in holdings:
+                    roleviews[sym].user_plan = holdings[sym].plan
 
     return AnalysisContext(
         cfg=cfg, watch=watch, cash=cash, holdings=holdings, strategies=strategies,

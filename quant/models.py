@@ -146,6 +146,7 @@ class RoleView:
     sl_price: float | None
     playbook: list[str] = field(default_factory=list)  # how to express this role (options etc.)
     note: str = ""                # one-line rationale / mismatch warning
+    user_plan: str = ""           # the human's freeform plan (portfolio.yaml) — to contrast with the engine
 
 
 @dataclass
@@ -174,6 +175,7 @@ class Holding:
     core: float
     trading: float
     avg_cost: float
+    plan: str = ""   # freeform human plan for this name (report-only; never feeds scoring/decision)
 
     @property
     def shares(self) -> float:
