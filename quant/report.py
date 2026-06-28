@@ -5,8 +5,22 @@ import json
 from dataclasses import asdict
 
 from quant.models import (
-    Fundamentals, MarketState, OptionAnalysis, OptionPositioning, Recommendation, RoleView,
+    Fundamentals, MacroState, MarketState, OptionAnalysis, OptionPositioning, Recommendation,
+    RoleView,
 )
+
+
+def _macro_block(macro: MacroState) -> list[str]:
+    """Compact macro-backdrop block — context that runs parallel to the market regime; never
+    feeds the engine. Surfaced for the macro-review skill to overlay the calendar/catalyst."""
+    out = [f"## Macro backdrop: **{macro.backdrop}**", ""]
+    for note in macro.notes:
+        out.append(f"- {note}")
+    out.append("")
+    out.append("_Report-only FRED context (does not feed scoring/decision). The macro-review skill "
+               "adds the calendar (FOMC/CPI/PCE/NFP) and what would change the read._")
+    out.append("")
+    return out
 
 
 def _fmt(x, money=True, pct=False):
@@ -174,14 +188,18 @@ def _positioning_tables(positioning: dict[str, OptionPositioning]) -> list[str]:
         pcoi = f"{p.pc_oi:.2f}" if p.pc_oi is not None else "—"
         iv = f"{p.atm_iv:.0%}" if p.atm_iv is not None else "—"
         skew = f"{p.iv_skew:+.0%}" if p.iv_skew is not None else "—"
-        rows.append([p.symbol, f"${p.spot:,.2f}", walls, _fmt(p.max_pain), em, rr, pcoi, iv, skew])
+        gflip = f"${p.gamma_flip:,.0f}" if p.gamma_flip is not None else "—"
+        ivr = f"{p.iv_rank:.0%}" if p.iv_rank is not None else "—"
+        rows.append([p.symbol, f"${p.spot:,.2f}", walls, _fmt(p.max_pain), gflip,
+                     em, rr, pcoi, iv, ivr, skew])
         kept = [n for n in p.notes
                 if not n.startswith("expected move") and not n.startswith("reward:risk")]
         if kept:
             notes.append(f"- **{p.symbol}** — " + " · ".join(kept))
     out = _table(
-        ["Symbol", "Spot", "Put/Call wall", "Max pain", "Exp move", "R:R", "P/C OI", "ATM IV", "Skew"],
-        rows, ["l", "r", "r", "r", "r", "r", "r", "r", "r"],
+        ["Symbol", "Spot", "Put/Call wall", "Max pain", "Gamma flip", "Exp move", "R:R", "P/C OI",
+         "ATM IV", "IV rank", "Skew"],
+        rows, ["l", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r"],
     )
     if notes:
         out += notes + [""]
@@ -198,6 +216,7 @@ def render_markdown(
     fundamentals: dict[str, Fundamentals] | None = None,
     positioning: dict[str, OptionPositioning] | None = None,
     roleviews: dict[str, RoleView] | None = None,
+    macro: MacroState | None = None,
 ) -> str:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
@@ -208,6 +227,9 @@ def render_markdown(
     for note in market.notes:
         out.append(f"- {note}")
     out.append("")
+
+    if macro is not None:
+        out += _macro_block(macro)
 
     out.append("## Portfolio")
     out.append("")
@@ -302,13 +324,14 @@ def generate(
     fundamentals: dict[str, Fundamentals] | None = None,
     positioning: dict[str, OptionPositioning] | None = None,
     roleviews: dict[str, RoleView] | None = None,
+    macro: MacroState | None = None,
 ) -> None:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
     roleviews = roleviews or {}
     md = render_markdown(
         generated_at, market, holding_recs, watchlist_recs, option_analyses, summary,
-        fundamentals, positioning, roleviews,
+        fundamentals, positioning, roleviews, macro,
     )
     with open(md_path, "w") as f:
         f.write(md)
@@ -316,6 +339,7 @@ def generate(
     payload = {
         "generated_at": generated_at,
         "market": asdict(market),
+        "macro": asdict(macro) if macro is not None else None,
         "portfolio": summary,
         "holdings": [asdict(r) for r in holding_recs],
         "watchlist": [asdict(r) for r in watchlist_recs],

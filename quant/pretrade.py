@@ -87,6 +87,8 @@ def build(
             "to_max_pain": _dist(mp, last),
             "live_reward": reward, "live_risk": risk, "live_rr": rr,
             "em_pct": positioning.em_pct, "iv_skew": positioning.iv_skew,
+            "gamma_flip": positioning.gamma_flip, "to_gamma_flip": _dist(positioning.gamma_flip, last),
+            "net_gex": positioning.net_gex, "iv_rank": positioning.iv_rank,
         })
     tp_price = sl_price = None
     if roleview is not None:
@@ -105,6 +107,14 @@ def build(
     if sl_price is not None and low is not None and low < sl_price:
         notes.append(f"role stop ${sl_price:,.0f} breached intraday (low ${low:,.0f}) — "
                      f"a stop too tight for today's range")
+    gflip = positioning.gamma_flip if positioning is not None else None
+    if gflip is not None:
+        if last < gflip:
+            notes.append(f"live ${last:,.0f} below gamma flip ${gflip:,.0f} — dealers short-gamma, "
+                         f"hedging amplifies (a dip can air-pocket; size in, don't chase)")
+        else:
+            notes.append(f"live ${last:,.0f} above gamma flip ${gflip:,.0f} — dealers long-gamma, "
+                         f"moves dampened (mean-revert / pin bias toward the flip)")
 
     # --- Earnings gate (soft) --------------------------------------------------------------
     gate_days = pt.get("earnings_gate_days", 5)

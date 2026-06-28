@@ -83,6 +83,15 @@ def _norm_pdf(x: float) -> float:
     return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
 
 
+def bs_gamma(S: float, K: float, T: float, r: float, sigma: float) -> float | None:
+    """Per-share Black-Scholes gamma (∂²V/∂S²) — identical for calls and puts. None if degenerate.
+    Shared by quant/option_flow.py for dealer-gamma (GEX) aggregation across a chain."""
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return None
+    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+    return _norm_pdf(d1) / (S * sigma * math.sqrt(T))
+
+
 def _bs_greeks(S: float, K: float, T: float, r: float, sigma: float, right: str) -> dict | None:
     """Per-share Black-Scholes Greeks (dividend yield q=0). vega per 1.00 vol,
     theta per year, rho per 1.00 rate — normalized at aggregation. None if degenerate."""
@@ -91,7 +100,7 @@ def _bs_greeks(S: float, K: float, T: float, r: float, sigma: float, right: str)
     d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
     d2 = d1 - sigma * math.sqrt(T)
     disc = math.exp(-r * T)
-    gamma = _norm_pdf(d1) / (S * sigma * math.sqrt(T))
+    gamma = bs_gamma(S, K, T, r, sigma)
     vega = S * _norm_pdf(d1) * math.sqrt(T)
     if right == "call":
         delta = _norm_cdf(d1)

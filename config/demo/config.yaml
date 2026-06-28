@@ -72,6 +72,30 @@ option_positioning:
   skew_pct: 0.10          # OTM offset for the put-IV vs call-IV skew (±10% from spot)
   skew_warn: 0.05         # put-skew above this prints a "downside fear / dips may air-pocket" note
   rr_good: 2.0            # reward:risk at/above this reads "favourable"
+  iv_rank_min_days: 60    # min accumulated daily atm_iv observations before IV-rank percentile is shown
+
+# Macro backdrop (quant/macro.py) from FRED. Report-only context that runs PARALLEL to the market
+# regime — does NOT feed scoring/decision/backtest. Source: FRED keyless CSV (no API key). The
+# macro-review skill adds the calendar (FOMC/CPI/PCE/NFP) on top of these numbers.
+macro:
+  enabled: true
+  change_days: 21          # window for the level-vs-prior "change" read (calendar days)
+  series:                  # FRED series ids pulled (see quant/macro.py reads)
+    - DGS10                # 10y nominal yield
+    - DGS2                 # 2y (-> 2s10s curve)
+    - DFII10               # 10y real yield (the duration head/tailwind for long-duration tech)
+    - T10YIE               # 10y breakeven inflation (context)
+    - BAMLH0A0HYM2         # HY OAS credit spread (risk-on/off)
+    - NFCI                 # Chicago Fed financial conditions (loose/tight)
+  thresholds:              # override quant/macro.DEFAULTS to taste (yields in %, 0.10 = 10bps)
+    rate_move: 0.10        # 10y move over the window to call rising/falling
+    real_move: 0.10        # DFII10 move to call a duration head/tailwind
+    curve_flat: 0.20       # 2s10s below this (and >= 0) reads flat
+    hy_wide: 4.0           # HY OAS above this = stressed
+    hy_tight: 3.0          # HY OAS below this (and not widening) = calm
+    hy_widen: 0.30         # HY OAS widening more than this over the window = risk-off
+    nfci_loose: -0.10      # NFCI below this = loose conditions
+    nfci_tight: 0.10       # NFCI above this = tight conditions
 
 # Horizon roles (quant/roles.py). Report-only — does NOT feed the decision engine. Hand-set a
 # symbol's role here; unlisted names get an engine-SUGGESTED role from trend+RS+valuation.

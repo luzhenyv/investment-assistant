@@ -19,8 +19,8 @@ import polars as pl
 import yaml
 
 from quant import (
-    clock, daily_report, decision, market, observations, option_flow, options, portfolio, profiles,
-    providers, roles, scoring, valuation,
+    clock, daily_report, decision, macro, market, observations, option_flow, options, portfolio,
+    profiles, providers, roles, scoring, valuation,
 )
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -109,6 +109,7 @@ def main() -> None:
     spy = scoring.build_signal("SPY", history["SPY"], cfg)
     qqq = scoring.build_signal("QQQ", history["QQQ"], cfg)
     mkt = market.detect_market(spy, qqq, vix)
+    macro_state = macro.detect_macro(providers.fetch_macro(cfg), cfg)  # report-only context
 
     fundamentals = {
         sym: valuation.build(sym, raw, signals[sym].price, cfg, stale=raw.get("_stale", False))
@@ -195,10 +196,11 @@ def main() -> None:
     # analyze() returns None for thin / non-optionable chains.
     positioning = {}
     if cfg.get("option_positioning", {}).get("enabled", False):
+        iv_hist = observations.atm_iv_history(STORE)  # prior daily atm_iv per symbol → IV-rank percentile
         for sym in sorted(signals):
             if sym not in history:
                 continue
-            p = option_flow.analyze(sym, signals[sym].price, history[sym], cfg)
+            p = option_flow.analyze(sym, signals[sym].price, history[sym], cfg, iv_hist=iv_hist.get(sym))
             if p is not None:
                 positioning[sym] = p
         print(f"  option positioning: {len(positioning)}/{len(signals)} chains analysed")
@@ -237,6 +239,10 @@ def main() -> None:
     config_hash = observations.record_run_meta(STORE, as_of_bar, cfg, git_sha, generated_at)
     holdings_count = len(holdings)
 
+    # Macro backdrop (report-only context; constant across the day's rows, like regime/vix). Stored
+    # as columns so the deferred reflection loop can grade labels against the macro regime later.
+    macro_levels = {sid: macro_state.series.get(sid, {}).get("level") for sid in macro_state.series}
+
     rows, outliers = [], []
     for sym in sorted(signals):
         s = signals[sym]
@@ -266,6 +272,8 @@ def main() -> None:
             "upside_to_target": f.upside_to_target if f else None,
             "valuation_label": f.valuation_label if f else None, "beta": f.beta if f else None,
             "put_wall": p.put_wall if p else None, "call_wall": p.call_wall if p else None,
+            "gamma_flip": p.gamma_flip if p else None, "net_gex": p.net_gex if p else None,
+            "iv_rank": p.iv_rank if p else None,
             "max_pain": p.max_pain if p else None, "em": p.em if p else None,
             "em_pct": p.em_pct if p else None, "pc_oi": p.pc_oi if p else None,
             "pc_vol": p.pc_vol if p else None, "atm_iv": p.atm_iv if p else None,
@@ -288,6 +296,10 @@ def main() -> None:
             "cash": round(cash), "total_value": round(total_value), "cash_frac": round(cash_frac, 4),
             "cash_status": cash_state, "cash_low": cash_low, "holdings_count": holdings_count,
             "spy_trend": spy.trend_score, "qqq_trend": qqq.trend_score,
+            # macro backdrop (report-only context, constant across the day's rows)
+            "dgs10": macro_levels.get("DGS10"), "real_yield": macro_levels.get("DFII10"),
+            "hy_spread": macro_levels.get("BAMLH0A0HYM2"), "nfci": macro_levels.get("NFCI"),
+            "macro_backdrop": macro_state.backdrop,
             # fundamentals fill-out
             "profit_margin": f.profit_margin if f else None,
             "rev_growth": f.rev_growth if f else None, "eps_growth": f.eps_growth if f else None,
@@ -336,7 +348,7 @@ def main() -> None:
     daily_report.generate(
         md_path, json_path, generated_at, mkt, holding_recs, watchlist_recs, option_analyses,
         summary, fundamentals, report_positioning, roleviews, outliers,
-        ohlcv=ohlcv, as_of_bar=as_of_bar, stale=stale,
+        ohlcv=ohlcv, as_of_bar=as_of_bar, stale=stale, macro=macro_state,
     )
     print(f"Report written to {md_path}")
     print(f"  {len(outliers)} outlier(s) flagged")

@@ -97,6 +97,7 @@ def _brief_md(b: PreTradeBrief) -> list[str]:
         ("Take-profit", "tp_price", "to_tp"),
         ("Max pain", "max_pain", "to_max_pain"),
         ("Stop-loss (role)", "sl_price", "to_sl"),
+        ("Gamma flip", "gamma_flip", "to_gamma_flip"),
         ("Put wall (support)", "put_wall", "to_put_wall"),
     ]:
         if lk.get(key) is not None:
@@ -111,6 +112,10 @@ def _brief_md(b: PreTradeBrief) -> list[str]:
                 f"(up {_pct(lk.get('live_reward'))} to call wall vs down {_pct(lk.get('live_risk'))} "
                 f"to put wall)"
             )
+            out.append("")
+        if lk.get("iv_rank") is not None:
+            tone = "rich — favor selling premium" if lk["iv_rank"] >= 0.5 else "cheap — favor buying premium"
+            out.append(f"IV rank **{lk['iv_rank']:.0%}** ({tone})")
             out.append("")
 
     # Earnings gate

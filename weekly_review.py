@@ -9,8 +9,8 @@ import os
 import yaml
 
 from quant import (
-    clock, decision, market, option_flow, options, portfolio, profiles, providers, report, roles,
-    scoring, valuation,
+    clock, decision, macro, market, option_flow, options, portfolio, profiles, providers, report,
+    roles, scoring, valuation,
 )
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -50,6 +50,7 @@ def main() -> None:
     spy = scoring.build_signal("SPY", history["SPY"], cfg)
     qqq = scoring.build_signal("QQQ", history["QQQ"], cfg)
     mkt = market.detect_market(spy, qqq, vix)
+    macro_state = macro.detect_macro(providers.fetch_macro(cfg), cfg)  # report-only context
 
     fundamentals = {
         sym: valuation.build(sym, raw, signals[sym].price, cfg, stale=raw.get("_stale", False))
@@ -183,6 +184,7 @@ def main() -> None:
         fundamentals,
         positioning,
         roleviews,
+        macro=macro_state,
     )
     print(f"Report written to {md_path}")
 

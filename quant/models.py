@@ -13,6 +13,21 @@ class MarketState:
 
 
 @dataclass
+class MacroState:
+    """Macro backdrop from FRED series (see quant/macro.py). Report-only context that runs
+    PARALLEL to MarketState — it never feeds market.detect_market, scoring, or decision, so the
+    deterministic engine stays backtestable. Coarse labelled reads for a long-duration equity book."""
+    series: dict                  # {series_id: {"level": float|None, "prev": float|None, "change": float|None}}
+    backdrop: str                 # one-line summary, e.g. "duration tailwind, credit calm"
+    rates_direction: str          # 10y rising | falling | flat
+    curve: str                    # 2s10s normal | flat | inverted
+    real_yield_regime: str        # duration headwind | tailwind | neutral (off DFII10 level + direction)
+    credit: str                   # risk-on | risk-off | neutral (off HY spread level + direction)
+    fin_conditions: str           # loose | neutral | tight (off NFCI)
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Signal:
     """Per-symbol technical snapshot + derived scores."""
     symbol: str
@@ -108,6 +123,9 @@ class OptionPositioning:
     reward: float | None          # (call_wall - spot)/spot, upside to resistance
     risk: float | None            # (spot - put_wall)/spot, downside to support
     rr_ratio: float | None        # reward / risk (the "赔率"; >=2 favourable)
+    gamma_flip: float | None = None  # underlying price where net dealer gamma crosses zero (below = short-gamma)
+    net_gex: float | None = None     # net dealer gamma at spot, $/1% move (>0 dampens, <0 amplifies)
+    iv_rank: float | None = None     # IV percentile (0-1) of ATM IV vs the daily store's atm_iv history
     notes: list[str] = field(default_factory=list)  # confluence vs levels.py zones + reads
 
 

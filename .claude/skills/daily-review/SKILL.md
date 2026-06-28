@@ -42,7 +42,14 @@ Each `outliers` row carries `flags` (why it fired), `day_change_pct`, `rvol`, `v
    idiosyncratic spike, that itself is the finding — flag it for investigation, don't guess.
 3. **RSI / state-flip outliers** → what the flip implies for tomorrow: a fresh Broken→Range or
    Range→Trend Acceleration flip on volume is more credible than one on quiet tape.
-4. **Is the label trustworthy?** The run stored `state` + `intent` as today's label. Say whether the
+4. **Positioning context (when the chain has it).** The `.json` `positioning` block now carries
+   `gamma_flip`, `net_gex`, and `iv_rank` per name (see `quant/option_flow.py`). Use them to qualify
+   a volume outlier: a heavy-volume **down** day with spot **below the gamma flip** (dealers
+   short-gamma, `net_gex < 0`) is more dangerous — hedging *amplifies* the move, so the flush can
+   over-extend; **above the flip** (long-gamma) the same dip tends to get dampened / mean-revert. A
+   high `iv_rank` (vol rich) around an event favors *selling* premium to express the view; a low one
+   favors *owning* optionality. These lag ~1 day (EOD OI) — context, not a trigger.
+5. **Is the label trustworthy?** The run stored `state` + `intent` as today's label. Say whether the
    outlier *corroborates* it (volume confirms the move → high-quality label) or *contradicts* it
    (intent says Add Core but the move is heavy-volume distribution on a thesis crack → suspect label,
    worth a manual override before it pollutes the dataset).

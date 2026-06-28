@@ -17,7 +17,11 @@ from quant import cache, clock
 
 _SECTOR_CACHE = cache.CACHE_DIR / "sectors.json"
 _FUNDAMENTALS_CACHE = cache.CACHE_DIR / "fundamentals.json"
+_MACRO_CACHE = cache.CACHE_DIR / "macro.json"
 _AV_URL = "https://www.alphavantage.co/query?function=OVERVIEW&symbol={sym}&apikey={key}"
+_FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}&cosd={start}"
+# Default FRED series for the macro lens (quant/macro.py) — tight, long-duration-equity-relevant.
+_DEFAULT_MACRO_SERIES = ("DGS10", "DGS2", "DFII10", "T10YIE", "BAMLH0A0HYM2", "NFCI")
 
 
 # --- Shared helpers ------------------------------------------------------------------- #
@@ -94,6 +98,81 @@ def fetch_vix(period: str) -> float:
         print("  ! VIX unavailable, assuming 20")
         return 20.0
     return float(df["Close"].tail(1).item())
+
+
+# --- Macro (FRED) --------------------------------------------------------------------- #
+def _read_macro_cache() -> dict[str, dict]:
+    if _MACRO_CACHE.exists():
+        try:
+            return json.loads(_MACRO_CACHE.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _download_fred(series_id: str, change_days: int) -> dict | None:
+    """Latest level of one FRED series + its value ~`change_days` calendar days earlier, via the
+    keyless CSV endpoint (no API key). Returns {level, prev, change, asof} or None on failure.
+    FRED marks missing observations '.'; the CSV header is skipped and the value column parsed."""
+    start = (clock.today() - dt.timedelta(days=change_days + 75)).isoformat()
+    try:
+        with urllib.request.urlopen(_FRED_URL.format(sid=series_id, start=start), timeout=20) as resp:
+            text = resp.read().decode()
+    except Exception:  # noqa: BLE001 — network/parse failures are expected; caller serves stale
+        return None
+    rows: list[tuple[dt.date, float]] = []
+    for line in text.splitlines()[1:]:
+        parts = line.split(",")
+        if len(parts) < 2 or parts[1].strip() in ("", "."):
+            continue
+        d = _parse_iso(parts[0].strip())
+        try:
+            v = float(parts[1].strip())
+        except ValueError:
+            continue
+        if d is not None:
+            rows.append((d, v))
+    if not rows:
+        return None
+    rows.sort()
+    last_date, level = rows[-1]
+    cutoff = last_date - dt.timedelta(days=change_days)
+    prior = [v for d, v in rows if d <= cutoff]
+    prev = prior[-1] if prior else None
+    change = level - prev if prev is not None else None
+    return {"level": level, "prev": prev, "change": change, "asof": last_date.isoformat()}
+
+
+def fetch_macro(cfg: dict) -> dict[str, dict]:
+    """Return {series_id: {level, prev, change}} for the configured FRED series, backed by a daily
+    JSON cache at `data/cache/macro.json`. Source: FRED keyless CSV (no API key). On a failed fetch
+    the last cached copy is served. Report-only context (quant/macro.py) — never feeds the engine."""
+    mc = cfg.get("macro", {})
+    if not mc.get("enabled", True):
+        return {}
+    series_ids = mc.get("series", _DEFAULT_MACRO_SERIES)
+    change_days = mc.get("change_days", 21)
+    today = clock.today().isoformat()
+    cached = _read_macro_cache()
+    out: dict[str, dict] = {}
+    dirty = False
+    for sid in series_ids:
+        entry = cached.get(sid)
+        if entry and entry.get("fetched") == today:
+            out[sid] = {k: entry.get(k) for k in ("level", "prev", "change")}
+            continue
+        data = _download_fred(sid, change_days)
+        if data is None:
+            out[sid] = ({k: entry.get(k) for k in ("level", "prev", "change")} if entry
+                        else {"level": None, "prev": None, "change": None})
+            continue
+        cached[sid] = {**data, "fetched": today}
+        dirty = True
+        out[sid] = {k: data[k] for k in ("level", "prev", "change")}
+    if dirty:
+        _MACRO_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _MACRO_CACHE.write_text(json.dumps(cached, indent=2, sort_keys=True))
+    return out
 
 
 # --- Options -------------------------------------------------------------------------- #

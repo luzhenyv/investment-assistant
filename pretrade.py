@@ -15,12 +15,14 @@ import sys
 import yaml
 
 from quant import (
-    clock, decision, option_flow, portfolio, pretrade, pretrade_report, profiles, providers, roles,
-    scoring, valuation,
+    clock, decision, observations, option_flow, portfolio, pretrade, pretrade_report, profiles,
+    providers, roles, scoring, valuation,
 )
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG, PORTFOLIO, _WATCHLIST, _OPTIONS, OUT_DIR = profiles.resolve(ROOT)
+PROFILE = os.environ.get("PROFILE", "demo")
+STORE = os.path.join(ROOT, "data", "daily_observations", PROFILE)
 
 
 def _load_yaml(path: str) -> dict:
@@ -69,6 +71,9 @@ def main() -> None:
         "vix": vix,
     }
 
+    opt_enabled = cfg.get("option_positioning", {}).get("enabled", False)
+    iv_hist = observations.atm_iv_history(STORE) if opt_enabled else {}
+
     now = clock.now()
     generated_at = clock.timestamp(now)
     briefs = []
@@ -79,8 +84,8 @@ def main() -> None:
         sig = scoring.build_signal(sym, history[sym], cfg)
         raw = raw_fund.get(sym)
         fund = valuation.build(sym, raw, sig.price, cfg, stale=raw.get("_stale", False)) if raw else None
-        positioning = (option_flow.analyze(sym, sig.price, history[sym], cfg)
-                       if cfg.get("option_positioning", {}).get("enabled", False) else None)
+        positioning = (option_flow.analyze(sym, sig.price, history[sym], cfg, iv_hist=iv_hist.get(sym))
+                       if opt_enabled else None)
         roleview = roles.build(sym, sig, fund, cfg) if cfg.get("role_rules") else None
         live = providers.fetch_quote(sym)
         if live is None:

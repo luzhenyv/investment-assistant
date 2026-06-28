@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from quant import clock, levels, providers
+from quant import clock, levels, options, providers
 from quant.models import OptionPositioning, Zone
 
 
@@ -121,6 +121,57 @@ def pc_vol(grid: dict) -> float | None:
     return _sum_vol(grid["puts"]) / c if c else None
 
 
+def _net_dealer_gamma_at(grid: dict, S: float, dte: int) -> float:
+    """Net dealer gamma at underlying price S, under the standard dealer-long-calls /
+    dealer-short-puts convention: Σ(call γ·OI) − Σ(put γ·OI). >0 = dealers net long gamma
+    (hedging dampens moves); <0 = short gamma (hedging amplifies — dips can air-pocket).
+    r≈0 (gamma is ~insensitive to the cash rate over 25-45 DTE)."""
+    T = max(dte, 1) / 365.0
+    total = 0.0
+    for side, sign in (("calls", 1.0), ("puts", -1.0)):
+        for k, d in grid[side].items():
+            iv, oi = d.get("iv"), d.get("oi", 0.0)
+            if not iv or oi <= 0:
+                continue
+            g = options.bs_gamma(S, k, T, 0.0, iv)
+            if g is not None:
+                total += sign * g * oi
+    return total
+
+
+def gamma_exposure(grid: dict, spot: float, dte: int, cfg: dict):
+    """Dealer gamma positioning from OI. Returns (gamma_flip, net_gex):
+    - net_gex: net dealer gamma at spot in $ per 1% move (Σ sign·γ·OI·100·spot²·0.01). Sign is the
+      read; magnitude is a naive GEX (no per-name dealer-inventory adjustment).
+    - gamma_flip: the underlying price (nearest spot, within the strike band) where net dealer gamma
+      crosses zero — below it dealers are typically short-gamma (moves amplify)."""
+    net_at_spot = _net_dealer_gamma_at(grid, spot, dte)
+    net_gex = net_at_spot * 100.0 * spot * spot * 0.01
+
+    lo, hi = _band(spot, cfg)
+    steps = 60
+    crossings: list[float] = []
+    prev_s = prev_v = None
+    for i in range(steps + 1):
+        s = lo + (hi - lo) * i / steps
+        v = _net_dealer_gamma_at(grid, s, dte)
+        if prev_v is not None and ((prev_v < 0 <= v) or (prev_v > 0 >= v)) and v != prev_v:
+            crossings.append(prev_s + (s - prev_s) * (0 - prev_v) / (v - prev_v))
+        prev_s, prev_v = s, v
+    flip = min(crossings, key=lambda x: abs(x - spot)) if crossings else None
+    return flip, net_gex
+
+
+def iv_rank(atm_iv_now: float | None, hist: list[float] | None, min_days: int) -> float | None:
+    """IV percentile: fraction (0-1) of accumulated daily ATM-IV observations at/below today's ATM
+    IV. None until ≥ `min_days` history exists. Reads the atm_iv column the daily store already
+    accumulates — high rank = vol rich (favor selling premium), low = cheap (favor buying)."""
+    vals = [v for v in (hist or []) if v is not None]
+    if atm_iv_now is None or len(vals) < min_days:
+        return None
+    return sum(1 for v in vals if v <= atm_iv_now) / len(vals)
+
+
 def reward_risk(spot: float, cw: float | None, pw: float | None):
     """Upside to the call wall vs downside to the put wall — the entry 'odds' (赔率)."""
     reward = (cw - spot) / spot if (cw is not None and spot) else None
@@ -138,7 +189,8 @@ def _zone_at(price: float | None, zones: list[Zone], kind: str) -> Zone | None:
     return None
 
 
-def _build_notes(spot, pw, cw, mp, em_low, em_high, rr, skew, zones, cfg) -> list[str]:
+def _build_notes(spot, pw, cw, mp, em_low, em_high, rr, skew, zones, cfg,
+                 gamma_flip=None, iv_r=None) -> list[str]:
     notes: list[str] = []
     # Confluence: a wall that lands inside a same-side structural zone is a stronger level.
     sz = _zone_at(pw, zones, "support")
@@ -157,12 +209,25 @@ def _build_notes(spot, pw, cw, mp, em_low, em_high, rr, skew, zones, cfg) -> lis
         notes.append(f"reward:risk {rr:.1f}:1 ({verdict}) — upside to call wall vs downside to put wall")
     if skew is not None and skew > cfg.get("option_positioning", {}).get("skew_warn", 0.05):
         notes.append(f"elevated put skew (+{skew:.0%}) — downside fear bid; dips may not be cushioned")
+    if gamma_flip is not None:
+        if spot < gamma_flip:
+            notes.append(f"spot below gamma flip ${gamma_flip:,.0f} — dealers short-gamma, "
+                         f"hedging amplifies moves (dips can air-pocket)")
+        else:
+            notes.append(f"spot above gamma flip ${gamma_flip:,.0f} — dealers long-gamma, "
+                         f"hedging dampens moves (pin / mean-revert bias)")
+    if iv_r is not None:
+        tone = "rich (favor selling premium)" if iv_r >= 0.5 else "cheap (favor buying premium)"
+        notes.append(f"IV rank {iv_r:.0%} — vol {tone}")
     return notes
 
 
-def analyze(symbol: str, spot: float, df, cfg: dict) -> OptionPositioning | None:
+def analyze(symbol: str, spot: float, df, cfg: dict,
+            iv_hist: list[float] | None = None) -> OptionPositioning | None:
     """Fetch the nearest-monthly chain, compute positioning + odds, and cross-reference with
-    levels.detect_zones. Returns None when no chain is available."""
+    levels.detect_zones. Returns None when no chain is available. `iv_hist` (the symbol's prior
+    daily ATM-IV values from the observation store) enables the IV-rank percentile; omit it (the
+    weekly/standalone path) and iv_rank stays None until history is wired in."""
     op = cfg.get("option_positioning", {})
     expiry = providers.pick_monthly_expiry(symbol, op.get("dte_lo", 25), op.get("dte_hi", 45))
     if expiry is None:
@@ -178,14 +243,19 @@ def analyze(symbol: str, spot: float, df, cfg: dict) -> OptionPositioning | None
     em_high = spot + em if em is not None else None
     skew = iv_skew(grid, spot, cfg)
     reward, risk, rr = reward_risk(spot, cw, pw)
+    atm = atm_iv(grid, spot)
+    gamma_flip, net_gex = gamma_exposure(grid, spot, dte, cfg)
+    iv_r = iv_rank(atm, iv_hist, op.get("iv_rank_min_days", 60))
     zones = levels.detect_zones(df, cfg, current_price=spot)
-    notes = _build_notes(spot, pw, cw, mp, em_low, em_high, rr, skew, zones, cfg)
+    notes = _build_notes(spot, pw, cw, mp, em_low, em_high, rr, skew, zones, cfg,
+                         gamma_flip=gamma_flip, iv_r=iv_r)
 
     return OptionPositioning(
         symbol=symbol, spot=spot, expiry=expiry, dte=dte,
         put_wall=pw, call_wall=cw, max_pain=mp,
         em=em, em_pct=em_pct, em_low=em_low, em_high=em_high,
         pc_oi=pc_oi(grid), pc_vol=pc_vol(grid),
-        atm_iv=atm_iv(grid, spot), iv_skew=skew,
-        reward=reward, risk=risk, rr_ratio=rr, notes=notes,
+        atm_iv=atm, iv_skew=skew,
+        reward=reward, risk=risk, rr_ratio=rr,
+        gamma_flip=gamma_flip, net_gex=net_gex, iv_rank=iv_r, notes=notes,
     )

@@ -16,6 +16,7 @@ session's `bar_date`; a re-run for the same session overwrites (last run wins; n
 """
 from __future__ import annotations
 
+import glob
 import hashlib
 import json
 import os
@@ -66,6 +67,10 @@ SCHEMA: dict[str, pl.DataType] = {
     # momentum/volatility indicators (appended; macd_hist gates Trend Acceleration, rest are soft)
     "macd": _F, "macd_signal": _F, "macd_hist": _F,
     "bb_bandwidth": _F, "bb_pct_b": _F, "bb_squeeze": _B, "macd_divergence": _S,
+    # macro backdrop (FRED; report-only context, constant across a day's rows — see quant/macro.py)
+    "dgs10": _F, "real_yield": _F, "hy_spread": _F, "nfci": _F, "macro_backdrop": _S,
+    # extended option positioning (dealer gamma + IV percentile — see quant/option_flow.py)
+    "gamma_flip": _F, "net_gex": _F, "iv_rank": _F,
 }
 
 
@@ -87,6 +92,25 @@ def record_run_meta(store_dir: str, bar_date: str, cfg: dict, git_sha: str | Non
     with open(os.path.join(runs_dir, f"{bar_date}.json"), "w") as f:
         json.dump(payload, f, indent=2, default=str)
     return config_hash
+
+
+def atm_iv_history(store_dir: str) -> dict[str, list[float]]:
+    """Per-symbol ATM-IV series across all accumulated daily files, in chronological (bar_date)
+    order — feeds the IV-rank percentile in quant/option_flow.py. Empty dict when the store is empty
+    or has no usable atm_iv column. Files missing the needed columns are skipped, not fatal."""
+    frames = []
+    for p in sorted(glob.glob(os.path.join(store_dir, "*.parquet"))):
+        try:
+            frames.append(pl.read_parquet(p, columns=["symbol", "atm_iv", "bar_date"]))
+        except Exception:  # noqa: BLE001 — an old file without these columns just doesn't contribute
+            continue
+    if not frames:
+        return {}
+    df = pl.concat(frames, how="vertical_relaxed").sort("bar_date")
+    return {
+        sym: [v for v in df.filter(pl.col("symbol") == sym)["atm_iv"].to_list() if v is not None]
+        for sym in df["symbol"].unique().to_list()
+    }
 
 
 def record(store_dir: str, bar_date: str, rows: list[dict]) -> str:

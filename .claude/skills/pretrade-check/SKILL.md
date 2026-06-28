@@ -56,6 +56,14 @@ Combine catalyst + where the live price sits vs structure + the earnings gate in
   put-wall / support confluence (or a max-pain bounce) is the engine's "buy near support". Use `live_rr`,
   not the stale report R:R. A breached role stop on a high-beta gap day is usually too-tight, not a sell
   signal — say which.
+- **Gamma flip + IV rank (re-anchored).** `levels.gamma_flip` (with `to_gamma_flip`, `net_gex`) is the
+  dealer-hedging regime line: live price **below the flip** = dealers short-gamma, hedging *amplifies* —
+  a dip can air-pocket, so scale in / don't chase a falling knife; **above the flip** = long-gamma,
+  moves get dampened (mean-revert / pin toward the flip), so chasing strength is lower-odds. `iv_rank`
+  (IV percentile, 0-1) sets the *expression*: **high** (vol rich) → get paid to wait with a cash-secured
+  put at the put wall rather than buying shares or calls; **low** (vol cheap) → long options are a
+  cleaner way to take the entry. Both lag ~1 day (EOD OI) and `iv_rank` is `null` until ~60 days of
+  history accumulate — say so when it's absent rather than inventing a read.
 - **Earnings gate (SOFT — never a hard block).** Inside the gate, a binary print gaps *through* any stop,
   so **don't deploy full size**: either **wait for the print** (lower risk; let IV collapse, enter the
   reaction) or take a **small starter** (only if it's a core 1y+ hold regardless) and keep powder for the
