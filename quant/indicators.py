@@ -122,6 +122,9 @@ def macd_divergence(
 
 
 def atr(high: pl.Series, low: pl.Series, close: pl.Series, period: int = 14) -> float:
+    """Wilder's ATR (SMMA smoothing, alpha=1/period) — the TA-Lib / stockstats / TradingView
+    standard, and the same smoothing rsi() uses. True Range is the max of (H-L), |H-prevC|,
+    |L-prevC|; the leading shift(1) null collapses to H-L on the first bar."""
     prev_close = close.shift(1)
     true_range = pl.DataFrame(
         [
@@ -130,7 +133,9 @@ def atr(high: pl.Series, low: pl.Series, close: pl.Series, period: int = 14) -> 
             (low - prev_close).abs().rename("lc"),
         ]
     ).max_horizontal()
-    return float(true_range.tail(period).mean())
+    return float(
+        true_range.ewm_mean(alpha=1 / period, adjust=False, ignore_nulls=True).tail(1).item()
+    )
 
 
 def trailing_return(close: pl.Series, lookback: int) -> float:
