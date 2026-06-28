@@ -12,10 +12,8 @@ from __future__ import annotations
 import os
 import sys
 
-import yaml
-
 from quant import (
-    clock, decision, observations, option_flow, portfolio, pretrade, pretrade_report, profiles,
+    clock, decision, observations, option_flow, pipeline, pretrade, pretrade_report, profiles,
     providers, roles, scoring, valuation,
 )
 
@@ -25,19 +23,15 @@ PROFILE = os.environ.get("PROFILE", "demo")
 STORE = os.path.join(ROOT, "data", "daily_observations", PROFILE)
 
 
-def _load_yaml(path: str) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
-
-
 def main() -> None:
     tickers = [t.upper() for t in sys.argv[1:]]
     if not tickers:
         raise SystemExit("usage: uv run pretrade.py SYM [SYM ...]")
 
-    cfg = _load_yaml(CONFIG)
+    cfg, _watch, cash, holdings, _strategies = pipeline.load_inputs(
+        CONFIG, PORTFOLIO, _WATCHLIST, _OPTIONS
+    )
     data_cfg = cfg["data"]
-    cash, holdings = portfolio.load_portfolio(PORTFOLIO)
     print(f"Pre-trade brief for {', '.join(tickers)} (+ book/SPY/QQQ context) ...")
 
     # Price the whole book (held names too) so total value / deployable / current weights are real.
@@ -53,11 +47,9 @@ def main() -> None:
     missing = [s for s in holdings if s not in prices]
     if missing:
         print(f"  ! no price for held {', '.join(missing)} — counted as $0 in total value")
-    total_value = portfolio.portfolio_value(cash, holdings, prices)
-    weights = portfolio.current_weights(holdings, prices, total_value)
-    cash_state = portfolio.cash_status(cash, total_value, cfg["cash_band"])
-    cash_frac = cash / total_value if total_value else 0.0
-    deployable = max(0.0, cash - cfg["cash_band"]["max"] * total_value)
+    total_value, weights, cash_state, cash_frac, deployable = pipeline.book_math(
+        cash, holdings, prices, cfg
+    )
     portfolio_ctx = {
         "cash": cash, "total_value": total_value, "cash_frac": cash_frac,
         "cash_status": cash_state, "deployable": deployable,

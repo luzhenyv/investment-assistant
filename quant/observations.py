@@ -20,8 +20,15 @@ import glob
 import hashlib
 import json
 import os
+import subprocess
+from typing import TYPE_CHECKING
 
 import polars as pl
+
+from quant import decision
+
+if TYPE_CHECKING:
+    from quant.pipeline import AnalysisContext
 
 _F = pl.Float64
 _S = pl.Utf8
@@ -71,57 +78,249 @@ SCHEMA: dict[str, pl.DataType] = {
     "dgs10": _F, "real_yield": _F, "hy_spread": _F, "nfci": _F, "macro_backdrop": _S,
     # extended option positioning (dealer gamma + IV percentile — see quant/option_flow.py)
     "gamma_flip": _F, "net_gex": _F, "iv_rank": _F,
+    # cadence of the run that produced this row (appended last; null in pre-cadence files → "daily").
+    # Daily runs the full universe; weekly appends its own snapshot — see record()/build_rows().
+    "cadence": _S,
 }
 
 
+def git_sha(root: str) -> str | None:
+    """Short HEAD SHA for run provenance; None if not a git checkout / git unavailable."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=root, text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def day_change(df: pl.DataFrame) -> float | None:
+    """Latest close vs the prior close, as a fraction (None if <2 bars)."""
+    close = df["Close"]
+    if close.len() < 2:
+        return None
+    prev = float(close.tail(2).head(1).item())
+    return float(close.tail(1).item()) / prev - 1.0 if prev else None
+
+
+def last_bar(df: pl.DataFrame) -> dict:
+    """The latest daily bar (date + OHLCV) for human verification of the record."""
+    last = df.tail(1)
+    return {
+        "bar_date": str(last["date"].item()),
+        "open": round(float(last["Open"].item()), 2),
+        "high": round(float(last["High"].item()), 2),
+        "low": round(float(last["Low"].item()), 2),
+        "close": round(float(last["Close"].item()), 2),
+        "volume": round(float(last["Volume"].item())),
+    }
+
+
+def prior_states(store_dir: str, as_of_bar: str, cadence: str = "daily") -> dict[str, str]:
+    """Most recent prior snapshot of the same cadence (before `as_of_bar`) → {symbol: state}, for
+    detecting state flips. Empty dict on the first run / no prior file. Filters by the `cadence`
+    column (pre-cadence files are treated as "daily") so weekly suffix files don't perturb daily
+    flip detection, and vice versa."""
+    frames = []
+    for p in glob.glob(os.path.join(store_dir, "*.parquet")):
+        try:
+            df = pl.read_parquet(p, columns=["symbol", "state", "bar_date", "cadence"])
+        except Exception:  # noqa: BLE001 — pre-cadence file: read what's there, default cadence
+            try:
+                df = pl.read_parquet(p, columns=["symbol", "state", "bar_date"]).with_columns(
+                    pl.lit("daily").alias("cadence")
+                )
+            except Exception:  # noqa: BLE001
+                continue
+        frames.append(df)
+    if not frames:
+        return {}
+    df = pl.concat(frames, how="vertical_relaxed").with_columns(
+        pl.col("cadence").fill_null("daily")
+    ).filter((pl.col("cadence") == cadence) & (pl.col("bar_date") < as_of_bar))
+    if df.height == 0:
+        return {}
+    last = df["bar_date"].max()
+    df = df.filter(pl.col("bar_date") == last)
+    return dict(zip(df["symbol"].to_list(), df["state"].to_list()))
+
+
+def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, str],
+               git_sha: str | None, config_hash: str, generated_at: str,
+               ohlcv: dict) -> tuple[list[dict], list[dict]]:
+    """Build one comprehensive observation row per symbol (the database) + the outliers list (the
+    `daily-review` skill's entry). Identical schema regardless of cadence — `cadence` is stamped on
+    every row. `prior_states` (same-cadence) drives the state-change outlier flag; pass {} to skip."""
+    cfg = ctx.cfg
+    watch_set = set(ctx.watch)
+    overbought = cfg["scoring"]["rsi_overbought"]
+    oversold = cfg["scoring"]["rsi_oversold"]
+    macro_levels = {sid: ctx.macro_state.series.get(sid, {}).get("level") for sid in ctx.macro_state.series}
+    rec_by_sym = {r.symbol: r for r in ctx.holding_recs + ctx.watchlist_recs}
+    holdings_count = len(ctx.holdings)
+
+    rows, outliers = [], []
+    for sym in sorted(ctx.signals):
+        s = ctx.signals[sym]
+        f = ctx.fundamentals.get(sym)
+        p = ctx.positioning.get(sym)
+        rv = ctx.roleviews.get(sym)
+        rec = rec_by_sym.get(sym)
+        h = ctx.holdings.get(sym)
+        intent = rec.intent if rec else ""
+        membership = "holding" if sym in ctx.holdings else "watchlist" if sym in watch_set else "underlying"
+        target_weight = decision.effective_target(sym, cfg)
+        rows.append({
+            "create_time": generated_at, "symbol": sym, "membership": membership,
+            "regime": ctx.mkt.regime, "bull_score": round(ctx.mkt.bull_score, 1), "vix": round(ctx.vix, 1),
+            "price": round(s.price, 2), "day_change_pct": day_change(ctx.history[sym]),
+            "volume": round(s.volume), "rvol": round(s.rvol, 2), "vol_z": round(s.vol_z, 2),
+            "vol_state": s.vol_state,
+            "ma20": round(s.ma20, 2), "ma50": round(s.ma50, 2), "ma200": round(s.ma200, 2),
+            "rsi": round(s.rsi, 1), "atr": round(s.atr, 2),
+            "high_52w": round(s.high_52w, 2), "low_52w": round(s.low_52w, 2),
+            "trend_score": s.trend_score, "momentum_score": s.momentum_score, "rs": round(s.rs, 4),
+            "state": s.state,
+            "sector": f.sector if f else None, "pe": f.pe if f else None,
+            "forward_pe": f.forward_pe if f else None, "peg": f.peg if f else None,
+            "pb": f.pb if f else None, "ev_ebitda": f.ev_ebitda if f else None,
+            "analyst_target": f.analyst_target if f else None,
+            "upside_to_target": f.upside_to_target if f else None,
+            "valuation_label": f.valuation_label if f else None, "beta": f.beta if f else None,
+            "put_wall": p.put_wall if p else None, "call_wall": p.call_wall if p else None,
+            "gamma_flip": p.gamma_flip if p else None, "net_gex": p.net_gex if p else None,
+            "iv_rank": p.iv_rank if p else None,
+            "max_pain": p.max_pain if p else None, "em": p.em if p else None,
+            "em_pct": p.em_pct if p else None, "pc_oi": p.pc_oi if p else None,
+            "pc_vol": p.pc_vol if p else None, "atm_iv": p.atm_iv if p else None,
+            "iv_skew": p.iv_skew if p else None, "reward": p.reward if p else None,
+            "risk": p.risk if p else None, "rr_ratio": p.rr_ratio if p else None,
+            "role": rv.role if rv else None, "suggested_role": rv.suggested_role if rv else None,
+            "horizon": rv.horizon if rv else None, "tp_price": rv.tp_price if rv else None,
+            "sl_price": rv.sl_price if rv else None,
+            "intent": intent, "reason": rec.reason if rec else "",
+            "dollar_gap": rec.dollar_gap if rec else None,
+            "strategy_hint": "; ".join(rec.strategy_hint) if rec and rec.strategy_hint else "",
+            # decision-context factors that gate the intent
+            "current_weight": round(ctx.weights.get(sym, 0.0), 4), "target_weight": round(target_weight, 4),
+            "ceiling": round(decision.effective_ceiling(s.state, target_weight, cfg), 4),
+            "pullback": s.pullback, "breakout": s.breakout,
+            # position composition (null when not held)
+            "shares": h.shares if h else None, "core": h.core if h else None,
+            "trading": h.trading if h else None, "avg_cost": h.avg_cost if h else None,
+            # book / market context (constant across the run's rows)
+            "cash": round(ctx.cash), "total_value": round(ctx.total_value), "cash_frac": round(ctx.cash_frac, 4),
+            "cash_status": ctx.cash_state, "cash_low": ctx.cash_low, "holdings_count": holdings_count,
+            "spy_trend": ctx.spy.trend_score, "qqq_trend": ctx.qqq.trend_score,
+            # macro backdrop (report-only context, constant across the run's rows)
+            "dgs10": macro_levels.get("DGS10"), "real_yield": macro_levels.get("DFII10"),
+            "hy_spread": macro_levels.get("BAMLH0A0HYM2"), "nfci": macro_levels.get("NFCI"),
+            "macro_backdrop": ctx.macro_state.backdrop,
+            # fundamentals fill-out
+            "profit_margin": f.profit_margin if f else None,
+            "rev_growth": f.rev_growth if f else None, "eps_growth": f.eps_growth if f else None,
+            # reproducibility
+            "git_sha": git_sha, "config_hash": config_hash,
+            # raw daily bar for verification (close == price, volume == volume above)
+            "bar_date": ohlcv[sym]["bar_date"], "open": ohlcv[sym]["open"],
+            "high": ohlcv[sym]["high"], "low": ohlcv[sym]["low"],
+            # momentum/volatility indicators
+            "macd": round(s.macd, 3), "macd_signal": round(s.macd_signal, 3),
+            "macd_hist": round(s.macd_hist, 3), "bb_bandwidth": round(s.bb_bandwidth, 4),
+            "bb_pct_b": round(s.bb_pct_b, 3), "bb_squeeze": s.bb_squeeze,
+            "macd_divergence": s.macd_divergence,
+            # cadence of this run (daily | weekly)
+            "cadence": cadence,
+        })
+
+        prev = prior_states.get(sym)
+        flags = []
+        if s.vol_state != "Normal":
+            flags.append(f"{s.vol_state} volume")
+        if prev and prev != s.state:
+            flags.append("state change")
+        if s.rsi >= overbought:
+            flags.append("RSI overbought")
+        elif s.rsi <= oversold:
+            flags.append("RSI oversold")
+        if s.bb_squeeze:
+            flags.append("Bollinger squeeze (breakout pending)")
+        if s.macd_divergence != "none":
+            flags.append(f"{s.macd_divergence} MACD divergence")
+        if flags:
+            outliers.append({
+                "symbol": sym, "flags": flags, "day_change_pct": day_change(ctx.history[sym]),
+                "rvol": round(s.rvol, 2), "vol_z": round(s.vol_z, 2), "vol_state": s.vol_state,
+                "state": s.state, "prev_state": prev, "rsi": round(s.rsi, 1), "intent": intent,
+                "macd_hist": round(s.macd_hist, 3), "bb_pct_b": round(s.bb_pct_b, 3),
+                "macd_divergence": s.macd_divergence,
+            })
+    return rows, outliers
+
+
 def record_run_meta(store_dir: str, bar_date: str, cfg: dict, git_sha: str | None,
-                    generated_at: str) -> str:
+                    generated_at: str, cadence: str = "daily") -> str:
     """Snapshot the hyperparameters in force at this run so any historical decision is reproducible.
 
-    Writes <store_dir>/_runs/<bar_date>.json = {bar_date, create_time, git_sha, config_hash,
-    config} and returns a short `config_hash` of the resolved config. The hash is stable while the
-    config is unchanged (easy grouping of 'which threshold set produced these decisions'), and the
-    `_runs/` subdir is invisible to the `*.parquet` glob so the panel load is unaffected. Idempotent
-    per session (overwrite)."""
+    Writes <store_dir>/_runs/<bar_date>.json (daily) or <bar_date>__<cadence>.json (non-daily) =
+    {bar_date, create_time, git_sha, config_hash, config} and returns a short `config_hash` of the
+    resolved config. The hash is stable while the config is unchanged (easy grouping of 'which
+    threshold set produced these decisions'), and the `_runs/` subdir is invisible to the
+    `*.parquet` glob so the panel load is unaffected. Idempotent per session+cadence (overwrite)."""
     runs_dir = os.path.join(store_dir, "_runs")
     os.makedirs(runs_dir, exist_ok=True)
     canonical = json.dumps(cfg, sort_keys=True, default=str)
     config_hash = hashlib.sha1(canonical.encode()).hexdigest()[:12]
     payload = {"bar_date": bar_date, "create_time": generated_at, "git_sha": git_sha,
                "config_hash": config_hash, "config": cfg}
-    with open(os.path.join(runs_dir, f"{bar_date}.json"), "w") as f:
+    suffix = "" if cadence == "daily" else f"__{cadence}"
+    with open(os.path.join(runs_dir, f"{bar_date}{suffix}.json"), "w") as f:
         json.dump(payload, f, indent=2, default=str)
     return config_hash
 
 
-def atm_iv_history(store_dir: str) -> dict[str, list[float]]:
-    """Per-symbol ATM-IV series across all accumulated daily files, in chronological (bar_date)
-    order — feeds the IV-rank percentile in quant/option_flow.py. Empty dict when the store is empty
-    or has no usable atm_iv column. Files missing the needed columns are skipped, not fatal."""
+def atm_iv_history(store_dir: str, cadence: str = "daily") -> dict[str, list[float]]:
+    """Per-symbol ATM-IV series across accumulated files of one `cadence`, in chronological
+    (bar_date) order — feeds the IV-rank percentile in quant/option_flow.py. Filtered to a single
+    cadence (default "daily", the full-universe series) so days with both a daily and a weekly file
+    don't double-count. Empty dict when the store is empty or has no usable atm_iv column. Files
+    missing the needed columns are skipped, not fatal; pre-cadence files are treated as "daily"."""
     frames = []
     for p in sorted(glob.glob(os.path.join(store_dir, "*.parquet"))):
         try:
-            frames.append(pl.read_parquet(p, columns=["symbol", "atm_iv", "bar_date"]))
-        except Exception:  # noqa: BLE001 — an old file without these columns just doesn't contribute
-            continue
+            df = pl.read_parquet(p, columns=["symbol", "atm_iv", "bar_date", "cadence"])
+        except Exception:  # noqa: BLE001 — pre-cadence or incompatible file
+            try:
+                df = pl.read_parquet(p, columns=["symbol", "atm_iv", "bar_date"]).with_columns(
+                    pl.lit("daily").alias("cadence")
+                )
+            except Exception:  # noqa: BLE001 — an old file without these columns just doesn't contribute
+                continue
+        frames.append(df)
     if not frames:
         return {}
-    df = pl.concat(frames, how="vertical_relaxed").sort("bar_date")
+    df = pl.concat(frames, how="vertical_relaxed").with_columns(
+        pl.col("cadence").fill_null("daily")
+    ).filter(pl.col("cadence") == cadence).sort("bar_date")
     return {
         sym: [v for v in df.filter(pl.col("symbol") == sym)["atm_iv"].to_list() if v is not None]
         for sym in df["symbol"].unique().to_list()
     }
 
 
-def record(store_dir: str, bar_date: str, rows: list[dict]) -> str:
-    """Write `rows` (one dict per symbol) to <store_dir>/<bar_date>.parquet under the fixed SCHEMA.
+def record(store_dir: str, bar_date: str, rows: list[dict], cadence: str = "daily") -> str:
+    """Write `rows` (one dict per symbol) under the fixed SCHEMA. Daily writes
+    <store_dir>/<bar_date>.parquet; non-daily cadences get a `__<cadence>` filename suffix so they
+    never overwrite the daily file for the same session.
 
-    Idempotent per session: a re-run for the same session overwrites the file (last run wins). Each row
-    dict may omit keys → they land as null. Returns a short status string for the caller to print."""
+    Idempotent per session+cadence: a re-run overwrites its own file (last run wins). Each row dict
+    may omit keys → they land as null. Returns a short status string for the caller to print."""
     if not rows:
         return "no rows — nothing written"
     os.makedirs(store_dir, exist_ok=True)
-    out_path = os.path.join(store_dir, f"{bar_date}.parquet")
+    suffix = "" if cadence == "daily" else f"__{cadence}"
+    out_path = os.path.join(store_dir, f"{bar_date}{suffix}.parquet")
     existed = os.path.exists(out_path)
     # Normalize every row to exactly the schema keys (missing → None) so the frame matches SCHEMA.
     norm = [{c: r.get(c) for c in SCHEMA} for r in rows]
