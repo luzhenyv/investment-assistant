@@ -81,3 +81,82 @@ def test_macd_divergence_bearish():
 
 def test_macd_divergence_none_on_clean_trend():
     assert _div_series([100 + i for i in range(60)]) == "none"
+
+
+# --- extended indicator library (ported from stockstats) ------------------- #
+def _ohlc(closes):
+    """Build (high, low, close) Series from a close path (±1 synthetic range)."""
+    c = pl.Series("Close", [float(x) for x in closes])
+    return c + 1.0, c - 1.0, c
+
+
+def test_roc_exact():
+    c = pl.Series([100.0, 102, 104, 106, 108, 110])  # 100 -> 110 over 5 bars
+    assert abs(indicators.roc(c, 5) - 10.0) < 1e-9
+
+
+def test_cmo_all_gains_is_100():
+    c = pl.Series([float(x) for x in range(1, 40)])  # strictly up -> no down sum
+    assert abs(indicators.cmo(c) - 100.0) < 1e-9
+
+
+def test_obv_accumulates_on_up_days():
+    c = pl.Series([float(x) for x in range(1, 11)])  # 9 up-days
+    v = pl.Series([100.0] * 10)
+    assert indicators.obv(c, v) == 900.0
+
+
+def test_aroon_strong_uptrend():
+    h, l, _ = _ohlc(range(1, 41))  # last bar is the window high; window low is oldest
+    assert indicators.aroon(h, l, 25) == 96.0  # up 100 - down 4
+
+
+def test_kdj_range_and_uptrend():
+    h, l, c = _ohlc(range(1, 40))
+    k, d, _ = indicators.kdj(h, l, c)
+    assert 0.0 <= k <= 100.0 and 0.0 <= d <= 100.0
+    assert k > 80  # close pinned at the window high
+
+
+def test_adx_uptrend_di_dominates():
+    h, l, c = _ohlc(range(1, 60))
+    adx_v, pdi, ndi = indicators.adx(h, l, c)
+    assert adx_v >= 0 and pdi >= 0 and ndi >= 0
+    assert pdi > ndi  # clean uptrend -> +DI leads
+
+
+def test_williams_r_range():
+    h, l, c = _ohlc([10, 12, 11, 13, 15, 14, 16, 18, 17, 19] * 3)
+    assert -100.0 <= indicators.williams_r(h, l, c) <= 0.0
+
+
+def test_mfi_range():
+    h, l, c = _ohlc([10, 12, 11, 13, 15, 14, 16, 18, 17, 19] * 3)
+    assert 0.0 <= indicators.mfi(h, l, c, pl.Series([1000.0] * 30)) <= 100.0
+
+
+def test_stoch_rsi_range():
+    c = pl.Series([10.0, 11, 10.5, 12, 13, 12.5, 14, 15, 14.5, 16] * 4)
+    assert 0.0 <= indicators.stoch_rsi(c) <= 100.0
+
+
+def test_cci_positive_in_uptrend():
+    h, l, c = _ohlc(range(1, 40))
+    assert indicators.cci(h, l, c) > 0
+
+
+def test_trix_is_finite():
+    t = indicators.trix(pl.Series([float(x) for x in range(1, 60)]))
+    assert t == t  # not NaN
+
+
+def test_supertrend_direction_and_line():
+    h, l, c = _ohlc(range(1, 40))
+    line, direction = indicators.supertrend(h, l, c)
+    assert direction in (-1.0, 0.0, 1.0)
+    assert line > 0
+
+
+def test_kama_within_price_bounds():
+    kama = indicators.kama(pl.Series([float(x) for x in range(1, 40)]))
+    assert 1.0 <= kama <= 39.0

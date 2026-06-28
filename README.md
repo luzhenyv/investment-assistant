@@ -44,6 +44,21 @@ uv run pytest                 # run the test suite
 - `config/demo/config.yaml` — target weights, drift band, cash band, score thresholds,
   and the intent → option-strategy hint map.
 
+## Technical indicators
+
+`quant/indicators.py` is a Polars-native, pure-function indicator library with **latest-value
+semantics** — each function returns the as-of-bar scalar, so the same code serves the live run and
+the backtester's sliced frames. The **core** (`rsi`, `macd`, `bollinger`, `atr`, …) feeds the
+scoring engine; an **extended, report-only set** — `kdj`, `stoch_rsi`, `cci`, `williams_r`,
+`adx`/DMI, `mfi`, `obv`, `trix`, `roc`, `cmo`, `aroon`, `supertrend`, `kama` — is available for
+skills/analysis but is **not** wired into scoring/decision, so the backtest is unaffected.
+
+The extended set is reimplemented in Polars from **[stockstats](https://github.com/jealous/stockstats)**
+(Cedric Zhuang, BSD-3-Clause); formulas, default windows and smoothing follow that source. Faithfulness
+caveats are noted in each function's docstring: smoothing uses the exact Wilder recursion
+(`adjust=False`); `obv` is the standard textbook definition (absent from stockstats); `mfi` is scaled
+0–100 (vs stockstats' 0–1 fraction); `kama` keeps stockstats' smoothing constant (no StockCharts squaring).
+
 ## Not in v0.1 (by design)
 
 Options-chain / strike selection · IV Rank · AI-written analysis ·
