@@ -8,10 +8,12 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import time
 import urllib.request
 
 import polars as pl
 import yfinance as yf
+from yfinance.exceptions import YFRateLimitError
 
 from quant import cache, clock
 
@@ -25,6 +27,49 @@ _DEFAULT_MACRO_SERIES = ("DGS10", "DGS2", "DFII10", "T10YIE", "BAMLH0A0HYM2", "N
 
 
 # --- Shared helpers ------------------------------------------------------------------- #
+_YF_MAX_RETRIES = 3
+_YF_BASE_DELAY = 2.0
+
+
+def _is_empty(result) -> bool:
+    """A yfinance return carrying no usable data (retryable soft failure)."""
+    if result is None:
+        return True
+    empty = getattr(result, "empty", None)  # pandas DataFrame/Series
+    if isinstance(empty, bool):
+        return empty
+    if isinstance(result, (list, tuple, dict, str)):
+        return len(result) == 0
+    return False
+
+
+def _yf_retry(func, *, retry_empty: bool = True,
+              max_retries: int = _YF_MAX_RETRIES, base_delay: float = _YF_BASE_DELAY):
+    """Call a yfinance function with exponential backoff. Retries on YFRateLimitError always, and
+    on an empty return when `retry_empty` (yfinance often surfaces a soft rate-limit as an empty
+    frame / 'no price data' rather than raising). Non-rate-limit exceptions propagate. After the
+    last attempt the empty result is returned (not raised) so the caller's existing None/cache
+    degrade path still runs. Pass `retry_empty=False` where empty is a legitimate state
+    (after-hours intraday, no listed options, no scheduled earnings)."""
+    last = None
+    for attempt in range(max_retries + 1):
+        try:
+            last = func()
+            if not (retry_empty and _is_empty(last)):
+                return last
+            reason = "empty result"
+        except YFRateLimitError:
+            if attempt >= max_retries:
+                raise
+            reason = "rate limited"
+        if attempt >= max_retries:
+            return last  # exhausted empty-retries — hand back so the caller degrades
+        delay = base_delay * (2 ** attempt)
+        print(f"  ~ yfinance {reason}, retry in {delay:.0f}s (attempt {attempt + 1}/{max_retries})")
+        time.sleep(delay)
+    return last
+
+
 def _to_polars(pdf, columns: list[str]) -> pl.DataFrame:
     """yfinance pandas frame -> Polars frame with a tz-free `date` column."""
     pf = pl.from_pandas(pdf.reset_index())
@@ -51,8 +96,8 @@ def _is_monthly(d: dt.date) -> bool:
 
 # --- History -------------------------------------------------------------------------- #
 def _download_history(symbol: str, period: str) -> pl.DataFrame | None:
-    pdf = yf.Ticker(symbol).history(period=period, auto_adjust=True)
-    if pdf.empty:
+    pdf = _yf_retry(lambda: yf.Ticker(symbol).history(period=period, auto_adjust=True))
+    if pdf is None or pdf.empty:
         return None
     return _to_polars(pdf, ["Open", "High", "Low", "Close", "Volume"])
 
@@ -80,8 +125,8 @@ def fetch_history(
 
 # --- VIX ------------------------------------------------------------------------------ #
 def _download_vix(period: str) -> pl.DataFrame | None:
-    pdf = yf.Ticker("^VIX").history(period=period)
-    if pdf.empty:
+    pdf = _yf_retry(lambda: yf.Ticker("^VIX").history(period=period))
+    if pdf is None or pdf.empty:
         return None
     return _to_polars(pdf, ["Close"])
 
@@ -184,9 +229,9 @@ def fetch_option_chain(symbol: str, expiry: str) -> dict[tuple[str, float], floa
     garbage IV from yfinance, so anything NaN or outside (0.01, 3.0) is dropped."""
     try:
         tk = yf.Ticker(symbol)
-        if expiry not in tk.options:
+        if expiry not in (_yf_retry(lambda: tk.options, retry_empty=False) or []):
             return None
-        chain = tk.option_chain(expiry)
+        chain = _yf_retry(lambda: tk.option_chain(expiry), retry_empty=False)
     except Exception:
         return None
 
@@ -206,9 +251,9 @@ def fetch_option_grid(symbol: str, expiry: str) -> dict | None:
     garbage IV on illiquid/deep-ITM strikes — same guard as fetch_option_chain)."""
     try:
         tk = yf.Ticker(symbol)
-        if expiry not in (tk.options or []):
+        if expiry not in (_yf_retry(lambda: tk.options, retry_empty=False) or []):
             return None
-        chain = tk.option_chain(expiry)
+        chain = _yf_retry(lambda: tk.option_chain(expiry), retry_empty=False)
     except Exception:  # noqa: BLE001
         return None
 
@@ -247,7 +292,7 @@ def pick_monthly_expiry(symbol: str, dte_lo: int, dte_hi: int) -> str | None:
     NOTE: yfinance is the free options source. Alpha Vantage options (the user's preferred
     primary) are premium-only, so this stays on yfinance until a premium key is available."""
     try:
-        listed = yf.Ticker(symbol).options or []
+        listed = _yf_retry(lambda: yf.Ticker(symbol).options, retry_empty=False) or []
     except Exception:  # noqa: BLE001 — network/parse failures are expected
         return None
     today = clock.today()
@@ -265,7 +310,7 @@ def pick_monthly_expiry(symbol: str, dte_lo: int, dte_hi: int) -> str | None:
 def _download_sector(symbol: str) -> str | None:
     """The symbol's GICS-style sector from yfinance, or None if unavailable."""
     try:
-        return yf.Ticker(symbol).info.get("sector") or None
+        return (_yf_retry(lambda: yf.Ticker(symbol).info) or {}).get("sector") or None
     except Exception:  # noqa: BLE001 — network/parse failures are expected
         return None
 
@@ -337,7 +382,7 @@ def _map_av(data: dict) -> dict:
 def _download_fundamentals_yf(symbol: str) -> dict | None:
     """Canonical fundamentals from yfinance `.info`. None on failure / empty."""
     try:
-        info = yf.Ticker(symbol).info
+        info = _yf_retry(lambda: yf.Ticker(symbol).info)
     except Exception:  # noqa: BLE001 — network/parse failures are expected
         return None
     if not info:
@@ -461,8 +506,8 @@ def fetch_quote(symbol: str) -> dict | None:
     is the true day move."""
     try:
         tk = yf.Ticker(symbol)
-        daily = tk.history(period="5d")
-        intra = tk.history(period="1d", interval="1m")
+        daily = _yf_retry(lambda: tk.history(period="5d"))
+        intra = _yf_retry(lambda: tk.history(period="1d", interval="1m"), retry_empty=False)
     except Exception:  # noqa: BLE001 — network/parse failures are expected
         return None
     if daily is None or daily.empty:
@@ -504,7 +549,7 @@ def fetch_earnings_date(symbol: str) -> dict | None:
     None when unknown / none upcoming. NO cache — the calendar moves. `is_estimate` is True when
     yfinance reports a date *range* (unconfirmed). Source: yfinance `Ticker.calendar`."""
     try:
-        cal = yf.Ticker(symbol).calendar
+        cal = _yf_retry(lambda: yf.Ticker(symbol).calendar, retry_empty=False)
     except Exception:  # noqa: BLE001 — network/parse failures are expected
         return None
     dates = cal.get("Earnings Date") if isinstance(cal, dict) else None
