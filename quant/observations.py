@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from quant import decision
+from quant import decision, indicators
 
 if TYPE_CHECKING:
     from quant.pipeline import AnalysisContext
@@ -117,21 +117,21 @@ def last_bar(df: pl.DataFrame) -> dict:
     }
 
 
-def prior_states(store_dir: str, as_of_bar: str, cadence: str = "daily") -> dict[str, str]:
-    """Most recent prior snapshot of the same cadence (before `as_of_bar`) → {symbol: state}, for
-    detecting state flips. Empty dict on the first run / no prior file. Filters by the `cadence`
-    column (pre-cadence files are treated as "daily") so weekly suffix files don't perturb daily
-    flip detection, and vice versa."""
+def _prior_snapshot(store_dir: str, as_of_bar: str, cadence: str, value_col: str) -> dict:
+    """Most recent prior same-cadence snapshot (before `as_of_bar`) → {symbol: value_col}. Empty on
+    first run / no prior file / files predating `value_col`. Filters by the `cadence` column
+    (pre-cadence files are treated as "daily") so weekly suffix files don't perturb daily detection,
+    and vice versa."""
     frames = []
     for p in glob.glob(os.path.join(store_dir, "*.parquet")):
         try:
-            df = pl.read_parquet(p, columns=["symbol", "state", "bar_date", "cadence"])
+            df = pl.read_parquet(p, columns=["symbol", value_col, "bar_date", "cadence"])
         except Exception:  # noqa: BLE001 — pre-cadence file: read what's there, default cadence
             try:
-                df = pl.read_parquet(p, columns=["symbol", "state", "bar_date"]).with_columns(
+                df = pl.read_parquet(p, columns=["symbol", value_col, "bar_date"]).with_columns(
                     pl.lit("daily").alias("cadence")
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — file predates value_col entirely: skip it
                 continue
         frames.append(df)
     if not frames:
@@ -143,15 +143,31 @@ def prior_states(store_dir: str, as_of_bar: str, cadence: str = "daily") -> dict
         return {}
     last = df["bar_date"].max()
     df = df.filter(pl.col("bar_date") == last)
-    return dict(zip(df["symbol"].to_list(), df["state"].to_list()))
+    return dict(zip(df["symbol"].to_list(), df[value_col].to_list()))
+
+
+def prior_states(store_dir: str, as_of_bar: str, cadence: str = "daily") -> dict[str, str]:
+    """Most recent prior same-cadence state per symbol (before `as_of_bar`), for detecting state
+    flips. Empty dict on the first run / no prior file."""
+    return _prior_snapshot(store_dir, as_of_bar, cadence, "state")
+
+
+def prior_macd_hist(store_dir: str, as_of_bar: str, cadence: str = "daily") -> dict[str, float]:
+    """Most recent prior same-cadence MACD histogram per symbol (before `as_of_bar`), for detecting
+    golden/death crosses via the histogram sign flip. Empty dict on the first run / files predating
+    the column."""
+    return _prior_snapshot(store_dir, as_of_bar, cadence, "macd_hist")
 
 
 def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, str],
                git_sha: str | None, config_hash: str, generated_at: str,
-               ohlcv: dict) -> tuple[list[dict], list[dict]]:
+               ohlcv: dict, prior_macd_hist: dict[str, float] | None = None,
+               ) -> tuple[list[dict], list[dict]]:
     """Build one comprehensive observation row per symbol (the database) + the outliers list (the
     `daily-review` skill's entry). Identical schema regardless of cadence — `cadence` is stamped on
-    every row. `prior_states` (same-cadence) drives the state-change outlier flag; pass {} to skip."""
+    every row. `prior_states` (same-cadence) drives the state-change outlier flag; pass {} to skip.
+    `prior_macd_hist` (same-cadence) drives the MACD golden/death-cross flag; omit to skip."""
+    prior_macd_hist = prior_macd_hist or {}
     cfg = ctx.cfg
     watch_set = set(ctx.watch)
     overbought = cfg["scoring"]["rsi_overbought"]
@@ -248,6 +264,9 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
             flags.append("Bollinger squeeze (breakout pending)")
         if s.macd_divergence != "none":
             flags.append(f"{s.macd_divergence} MACD divergence")
+        cross = indicators.macd_cross(prior_macd_hist.get(sym), s.macd_hist)
+        if cross != "none":
+            flags.append(f"MACD {cross} cross")
         if flags:
             outliers.append({
                 "symbol": sym, "flags": flags, "day_change_pct": day_change(ctx.history[sym]),

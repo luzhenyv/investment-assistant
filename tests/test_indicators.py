@@ -83,6 +83,33 @@ def test_macd_divergence_none_on_clean_trend():
     assert _div_series([100 + i for i in range(60)]) == "none"
 
 
+def test_macd_divergence_bearish_negated_by_breakout():
+    # Same bearish setup, but instead of fading the tail runs hard ABOVE the last swing high
+    # (>80) — price has resolved the divergence to the upside, so it must read "none".
+    prices = ([40] * 6 + list(range(40, 80, 2)) + list(range(80, 46, -4))
+              + list(range(48, 82, 3)) + list(range(84, 120, 3)))
+    assert _div_series(prices) == "none"
+
+
+def test_macd_divergence_bullish_negated_by_breakdown():
+    # Same bullish setup, but the tail breaks DOWN below the last swing low (<38) — the
+    # selling-exhaustion thesis failed, so it must read "none".
+    prices = ([80] * 6 + list(range(80, 40, -2)) + list(range(40, 74, 4))
+              + list(range(72, 38, -3)) + list(range(36, 0, -3)))
+    assert _div_series(prices) == "none"
+
+
+def test_macd_cross():
+    # Histogram sign flip between prior and current bar: negative->positive = golden,
+    # positive->negative = death; same sign or no prior bar = none.
+    assert indicators.macd_cross(-0.3, 0.5) == "golden"
+    assert indicators.macd_cross(0.4, -0.2) == "death"
+    assert indicators.macd_cross(0.4, 0.6) == "none"
+    assert indicators.macd_cross(-0.4, -0.6) == "none"
+    assert indicators.macd_cross(None, 0.5) == "none"   # first run / no prior bar
+    assert indicators.macd_cross(0.0, 0.5) == "golden"  # crossing up off exactly zero
+
+
 # --- extended indicator library (ported from stockstats) ------------------- #
 def _ohlc(closes):
     """Build (high, low, close) Series from a close path (±1 synthetic range)."""

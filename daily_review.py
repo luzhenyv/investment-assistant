@@ -50,6 +50,7 @@ def main() -> None:
     config_hash = observations.record_run_meta(STORE, as_of_bar, ctx.cfg, git_sha, generated_at)
     rows, outliers = observations.build_rows(
         ctx, cadence="daily", prior_states=observations.prior_states(STORE, as_of_bar),
+        prior_macd_hist=observations.prior_macd_hist(STORE, as_of_bar),
         git_sha=git_sha, config_hash=config_hash, generated_at=generated_at, ohlcv=ohlcv,
     )
 

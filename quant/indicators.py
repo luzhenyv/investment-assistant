@@ -95,12 +95,16 @@ def macd_divergence(
     Swing pivots are the same centered 2k+1 fractal levels.py uses, so a pivot is only confirmed
     k bars after it prints — no look-ahead in a backtest slice. Bullish: the last two swing LOWS
     make a lower price low but a higher MACD-line low (selling exhausting). Bearish: the last two
-    swing HIGHS make a higher price high but a lower MACD-line high (buying exhausting)."""
+    swing HIGHS make a higher price high but a lower MACD-line high (buying exhausting).
+
+    A pattern is negated once price closes beyond the triggering pivot `b` (a later close above the
+    swing high kills a bearish divergence; below the swing low kills a bullish one) — the market has
+    resolved it, so we return "none" rather than a stale flag."""
     win = 2 * k + 1
     if close.len() < win:
         return "none"
     line = _macd_line(close, fast, slow).to_list()
-    hi, lo = high.to_list(), low.to_list()
+    hi, lo, c = high.to_list(), low.to_list(), close.to_list()
     lo_roll = low.rolling_min(win, center=True).to_list()
     hi_roll = high.rolling_max(win, center=True).to_list()
     n = close.len()
@@ -109,15 +113,29 @@ def macd_divergence(
     lows = [i for i in _swing_pivots(lo, lo_roll, k) if i >= floor and line[i] is not None]
     if len(lows) >= 2:
         a, b = lows[-2], lows[-1]
-        if lo[b] < lo[a] and line[b] > line[a]:
+        if lo[b] < lo[a] and line[b] > line[a] and min(c[b + 1:], default=lo[b]) >= lo[b]:
             return "bullish"
 
     highs = [i for i in _swing_pivots(hi, hi_roll, k) if i >= floor and line[i] is not None]
     if len(highs) >= 2:
         a, b = highs[-2], highs[-1]
-        if hi[b] > hi[a] and line[b] < line[a]:
+        if hi[b] > hi[a] and line[b] < line[a] and max(c[b + 1:], default=hi[b]) <= hi[b]:
             return "bearish"
 
+    return "none"
+
+
+def macd_cross(prev_hist: float | None, curr_hist: float) -> str:
+    """MACD golden/death cross from the histogram (line - signal) sign flip between the prior bar
+    and now: "golden" (histogram turned positive — the MACD line crossed ABOVE its signal line),
+    "death" (turned negative — crossed below), or "none". `prev_hist` None (no prior bar / first
+    run) → "none"."""
+    if prev_hist is None:
+        return "none"
+    if prev_hist <= 0 < curr_hist:
+        return "golden"
+    if prev_hist >= 0 > curr_hist:
+        return "death"
     return "none"
 
 
