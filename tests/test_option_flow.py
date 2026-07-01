@@ -42,8 +42,15 @@ def test_max_pain_is_a_band_strike():
 
 def test_expected_move_from_atm_straddle():
     em, em_pct = option_flow.expected_move(_grid(), 100)
-    assert abs(em - (5.0 + 4.5)) < 1e-9   # ATM call + ATM put
+    assert abs(em - (5.0 + 4.5)) < 1e-9   # ATM call + ATM put, strike == spot -> no intrinsic
     assert abs(em_pct - 0.095) < 1e-9
+
+
+def test_expected_move_subtracts_intrinsic_off_spot():
+    # spot=98 but nearest two-sided strike is 100, so |strike-spot|=2 of intrinsic is removed.
+    em, em_pct = option_flow.expected_move(_grid(), 98)
+    assert abs(em - (5.0 + 4.5 - 2.0)) < 1e-9
+    assert abs(em_pct - (7.5 / 98)) < 1e-9
 
 
 def test_pc_ratios_and_skew():

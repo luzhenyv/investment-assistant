@@ -73,15 +73,19 @@ def _nearest_strike(side: dict, target: float, *, need_iv: bool = False) -> floa
 
 
 def expected_move(grid: dict, spot: float) -> tuple[float | None, float | None]:
-    """ATM straddle (ATM call price + ATM put price) → expected move ($, %)."""
-    ck = _nearest_strike(grid["calls"], spot)
-    pk = _nearest_strike(grid["puts"], spot)
-    if ck is None or pk is None:
+    """ATM-straddle expected move (~1σ / 68% band to expiry) → ($, %).
+
+    Use the single strike nearest spot present on BOTH sides, sum the ATM call + put mid prices,
+    then subtract the intrinsic |strike − spot| so only time/vol value (the actual expected move)
+    remains — otherwise an off-spot ATM strike inflates the straddle by its intrinsic. (spot ± em)."""
+    strikes = set(grid["calls"]) & set(grid["puts"])
+    if not strikes:
         return None, None
-    cp, pp = grid["calls"][ck]["price"], grid["puts"][pk]["price"]
+    k = min(strikes, key=lambda s: abs(s - spot))
+    cp, pp = grid["calls"][k]["price"], grid["puts"][k]["price"]
     if not cp or not pp:
         return None, None
-    em = cp + pp
+    em = max(0.0, cp + pp - abs(k - spot))
     return em, (em / spot if spot else None)
 
 
