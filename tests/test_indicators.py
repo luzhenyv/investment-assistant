@@ -45,6 +45,34 @@ def test_trailing_return_insufficient_history_is_zero():
     assert indicators.trailing_return(s, 5) == 0.0
 
 
+def _close_from_returns(returns):
+    close = [100.0]
+    for r in returns:
+        close.append(close[-1] * (1.0 + r))
+    return pl.Series(close)
+
+
+def test_return_zscore_excludes_today_from_baseline():
+    # Prior mean is exactly today's return; including today in the baseline would shift it.
+    s = _close_from_returns([0.0, 0.0, 1.0, 1.0 / 3.0])
+    assert abs(indicators.return_zscore(s, 3)) < 1e-12
+
+
+def test_return_zscore_flags_positive_abnormal_move():
+    s = _close_from_returns([-0.01, 0.0, 0.01, 0.02, 0.03, 0.04])
+    assert indicators.return_zscore(s, 5) > 1.5
+
+
+def test_return_zscore_flags_negative_abnormal_move():
+    s = _close_from_returns([-0.01, 0.0, 0.01, 0.02, 0.03, -0.02])
+    assert indicators.return_zscore(s, 5) < -1.5
+
+
+def test_return_zscore_flat_or_short_history_is_zero():
+    assert indicators.return_zscore(_close_from_returns([0.01, 0.01, 0.01, 0.10]), 3) == 0.0
+    assert indicators.return_zscore(_close_from_returns([0.10]), 3) == 0.0
+
+
 def test_macd_rising_series_positive_histogram():
     # A steadily accelerating series -> fast EMA above slow EMA and rising -> hist > 0.
     s = pl.Series([float(i * i) for i in range(1, 60)])

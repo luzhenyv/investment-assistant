@@ -47,6 +47,12 @@ volume:
   elevated_z: 1.0         # vol_z >= this  => "Elevated"
   abnormal_z: 2.0         # vol_z >= this  => "Abnormal"
 
+# Daily-review-only outlier overlays. Report-only — never feeds trend/momentum/state.
+daily_review:
+  price_move:
+    lookback: 21          # prior daily returns for the close-to-close return z-score
+    abnormal_z: 1.5       # |return_z| >= this => "Abnormal price move"
+
 # Fundamentals / valuation hints (quant/valuation.py). Report-only — does NOT feed the
 # decision engine or backtest. PE/PEG/analyst target normalised to a vendor-neutral schema, so
 # the source is pluggable (more coming: broker, finviz, ...). `source: yfinance` (default) needs

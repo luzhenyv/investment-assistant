@@ -167,6 +167,22 @@ def trailing_return(close: pl.Series, lookback: int) -> float:
     return float(close.tail(1).item()) / past - 1.0
 
 
+def return_zscore(close: pl.Series, lookback: int = 21) -> float:
+    """Z-score of the latest daily return vs the prior `lookback` daily returns.
+
+    Today's return is excluded from the baseline, so an abnormal move does not dilute its own
+    reference distribution. Returns 0.0 when history is too short or the window is flat."""
+    rets = close.pct_change().drop_nulls()
+    if rets.len() < lookback + 1:
+        return 0.0
+    today = float(rets.tail(1).item())
+    prior = rets.tail(lookback + 1).head(lookback)
+    mean, std = prior.mean(), prior.std()
+    if not std or abs(float(std)) < 1e-12:
+        return 0.0
+    return (today - float(mean)) / float(std)
+
+
 def correlation(df_a: pl.DataFrame, df_b: pl.DataFrame, lookback: int) -> float:
     """Pearson correlation of two symbols' daily returns over the trailing `lookback`
     overlapping bars. Joins on date so frames with different start dates align; returns

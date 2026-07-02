@@ -172,6 +172,9 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
     watch_set = set(ctx.watch)
     overbought = cfg["scoring"]["rsi_overbought"]
     oversold = cfg["scoring"]["rsi_oversold"]
+    price_move = (cfg.get("daily_review", {}) or {}).get("price_move", {}) or {}
+    move_lookback = price_move.get("lookback", 21)
+    move_abnormal_z = price_move.get("abnormal_z", 1.5)
     macro_levels = {sid: ctx.macro_state.series.get(sid, {}).get("level") for sid in ctx.macro_state.series}
     rec_by_sym = {r.symbol: r for r in ctx.holding_recs + ctx.watchlist_recs}
     holdings_count = len(ctx.holdings)
@@ -187,10 +190,12 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
         intent = rec.intent if rec else ""
         membership = "holding" if sym in ctx.holdings else "watchlist" if sym in watch_set else "underlying"
         target_weight = decision.effective_target(sym, cfg)
+        day_move = day_change(ctx.history[sym])
+        move_z = indicators.return_zscore(ctx.history[sym]["Close"], move_lookback)
         rows.append({
             "create_time": generated_at, "symbol": sym, "membership": membership,
             "regime": ctx.mkt.regime, "bull_score": round(ctx.mkt.bull_score, 1), "vix": round(ctx.vix, 1),
-            "price": round(s.price, 2), "day_change_pct": day_change(ctx.history[sym]),
+            "price": round(s.price, 2), "day_change_pct": day_move,
             "volume": round(s.volume), "rvol": round(s.rvol, 2), "vol_z": round(s.vol_z, 2),
             "vol_state": s.vol_state,
             "ma20": round(s.ma20, 2), "ma50": round(s.ma50, 2), "ma200": round(s.ma200, 2),
@@ -254,6 +259,8 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
         flags = []
         if s.vol_state != "Normal":
             flags.append(f"{s.vol_state} volume")
+        if abs(move_z) >= move_abnormal_z:
+            flags.append(f"Abnormal price move ({move_z:+.1f}σ)")
         if prev and prev != s.state:
             flags.append("state change")
         if s.rsi >= overbought:
@@ -269,7 +276,7 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
             flags.append(f"MACD {cross} cross")
         if flags:
             outliers.append({
-                "symbol": sym, "flags": flags, "day_change_pct": day_change(ctx.history[sym]),
+                "symbol": sym, "flags": flags, "day_change_pct": day_move,
                 "rvol": round(s.rvol, 2), "vol_z": round(s.vol_z, 2), "vol_state": s.vol_state,
                 "state": s.state, "prev_state": prev, "rsi": round(s.rsi, 1), "intent": intent,
                 "macd_hist": round(s.macd_hist, 3), "bb_pct_b": round(s.bb_pct_b, 3),
