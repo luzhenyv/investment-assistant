@@ -183,6 +183,16 @@ def return_zscore(close: pl.Series, lookback: int = 21) -> float:
     return (today - float(mean)) / float(std)
 
 
+def atr_move_multiple(close: pl.Series, atr_value: float) -> float:
+    """Latest close-to-close move measured in ATRs, signed by direction.
+
+    Returns 0.0 when history is too short or ATR is unavailable/zero."""
+    if close.len() < 2 or not atr_value:
+        return 0.0
+    prev = float(close.tail(2).head(1).item())
+    return (float(close.tail(1).item()) - prev) / atr_value
+
+
 def correlation(df_a: pl.DataFrame, df_b: pl.DataFrame, lookback: int) -> float:
     """Pearson correlation of two symbols' daily returns over the trailing `lookback`
     overlapping bars. Joins on date so frames with different start dates align; returns

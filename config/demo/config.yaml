@@ -54,6 +54,8 @@ daily_review:
   price_move:
     lookback: 21          # prior daily returns for the close-to-close return z-score
     abnormal_z: 1.25       # |return_z| >= this => "Abnormal price move"
+  atr_move:
+    abnormal_mult: 1.5    # |close - prev_close| / ATR >= this => "Abnormal ATR move"
 
 # Fundamentals / valuation hints (quant/valuation.py). Report-only — does NOT feed the
 # decision engine or backtest. PE/PEG/analyst target normalised to a vendor-neutral schema, so

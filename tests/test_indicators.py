@@ -73,6 +73,16 @@ def test_return_zscore_flat_or_short_history_is_zero():
     assert indicators.return_zscore(_close_from_returns([0.10]), 3) == 0.0
 
 
+def test_atr_move_multiple_signed_close_to_close_move():
+    assert indicators.atr_move_multiple(pl.Series([100.0, 103.0]), 2.0) == 1.5
+    assert indicators.atr_move_multiple(pl.Series([100.0, 97.0]), 2.0) == -1.5
+
+
+def test_atr_move_multiple_short_or_zero_atr_is_zero():
+    assert indicators.atr_move_multiple(pl.Series([100.0]), 2.0) == 0.0
+    assert indicators.atr_move_multiple(pl.Series([100.0, 103.0]), 0.0) == 0.0
+
+
 def test_macd_rising_series_positive_histogram():
     # A steadily accelerating series -> fast EMA above slow EMA and rising -> hist > 0.
     s = pl.Series([float(i * i) for i in range(1, 60)])

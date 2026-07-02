@@ -22,24 +22,21 @@ def _history(closes):
     })
 
 
-def _signal(symbol, price):
+def _signal(symbol, price, atr=2.0):
     return Signal(
         symbol=symbol, price=price, ma20=price, ma50=price, ma200=price,
-        rsi=50.0, atr=2.0, high_52w=price, low_52w=price,
+        rsi=50.0, atr=atr, high_52w=price, low_52w=price,
         trend_score=50.0, momentum_score=40.0, pullback=False, breakout=False,
         state="Range",
     )
 
 
-def test_build_rows_flags_statistical_price_move():
-    closes = _close_from_returns([-0.01, 0.0, 0.01, 0.02, 0.03, 0.04])
-    sym = "MOVE"
-    sig = _signal(sym, closes[-1])
+def _ctx(sym, closes, sig, daily_review):
     ctx_kwargs = {
         "cfg": {
             "drift_band": 0.20,
             "scoring": {"rsi_overbought": 70, "rsi_oversold": 40},
-            "daily_review": {"price_move": {"lookback": 5, "abnormal_z": 1.5}},
+            "daily_review": daily_review,
         },
         "watch": [], "cash": 0.0, "holdings": {}, "strategies": {},
         "history": {sym: _history(closes)}, "vix": 15.0, "sectors": {},
@@ -52,7 +49,16 @@ def test_build_rows_flags_statistical_price_move():
     }
     if "sector_state" in AnalysisContext.__dataclass_fields__:
         ctx_kwargs["sector_state"] = None
-    ctx = AnalysisContext(**ctx_kwargs)
+    return AnalysisContext(**ctx_kwargs)
+
+
+def test_build_rows_flags_statistical_price_move():
+    closes = _close_from_returns([-0.01, 0.0, 0.01, 0.02, 0.03, 0.04])
+    sym = "MOVE"
+    ctx = _ctx(
+        sym, closes, _signal(sym, closes[-1]),
+        {"price_move": {"lookback": 5, "abnormal_z": 1.5}, "atr_move": {"abnormal_mult": 10.0}},
+    )
 
     _, outliers = observations.build_rows(
         ctx, cadence="daily", prior_states={}, git_sha=None, config_hash="test",
@@ -62,3 +68,24 @@ def test_build_rows_flags_statistical_price_move():
 
     assert outliers[0]["symbol"] == sym
     assert outliers[0]["flags"] == ["Abnormal price move (+1.9σ)"]
+
+
+def test_build_rows_flags_atr_move():
+    closes = _close_from_returns([0.01, -0.01, 0.01, -0.01, 0.01, 0.04])
+    sym = "ATR"
+    ctx = _ctx(
+        sym, closes, _signal(sym, closes[-1], atr=2.0),
+        {
+            "price_move": {"lookback": 5, "abnormal_z": 10.0},
+            "atr_move": {"abnormal_mult": 1.5},
+        },
+    )
+
+    _, outliers = observations.build_rows(
+        ctx, cadence="daily", prior_states={}, git_sha=None, config_hash="test",
+        generated_at="2026-01-07 00:00:00 UTC",
+        ohlcv={sym: {"bar_date": "2026-01-06", "open": 0, "high": 0, "low": 0}},
+    )
+
+    assert outliers[0]["symbol"] == sym
+    assert outliers[0]["flags"] == ["Abnormal ATR move (+2.0x ATR)"]

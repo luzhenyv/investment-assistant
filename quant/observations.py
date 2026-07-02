@@ -172,9 +172,12 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
     watch_set = set(ctx.watch)
     overbought = cfg["scoring"]["rsi_overbought"]
     oversold = cfg["scoring"]["rsi_oversold"]
-    price_move = (cfg.get("daily_review", {}) or {}).get("price_move", {}) or {}
+    daily_review_cfg = cfg.get("daily_review", {}) or {}
+    price_move = daily_review_cfg.get("price_move", {}) or {}
     move_lookback = price_move.get("lookback", 21)
     move_abnormal_z = price_move.get("abnormal_z", 1.5)
+    atr_move = daily_review_cfg.get("atr_move", {}) or {}
+    atr_abnormal_mult = atr_move.get("abnormal_mult", 1.5)
     macro_levels = {sid: ctx.macro_state.series.get(sid, {}).get("level") for sid in ctx.macro_state.series}
     rec_by_sym = {r.symbol: r for r in ctx.holding_recs + ctx.watchlist_recs}
     holdings_count = len(ctx.holdings)
@@ -192,6 +195,7 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
         target_weight = decision.effective_target(sym, cfg)
         day_move = day_change(ctx.history[sym])
         move_z = indicators.return_zscore(ctx.history[sym]["Close"], move_lookback)
+        atr_mult = indicators.atr_move_multiple(ctx.history[sym]["Close"], s.atr)
         rows.append({
             "create_time": generated_at, "symbol": sym, "membership": membership,
             "regime": ctx.mkt.regime, "bull_score": round(ctx.mkt.bull_score, 1), "vix": round(ctx.vix, 1),
@@ -261,6 +265,8 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
             flags.append(f"{s.vol_state} volume")
         if abs(move_z) >= move_abnormal_z:
             flags.append(f"Abnormal price move ({move_z:+.1f}σ)")
+        if abs(atr_mult) >= atr_abnormal_mult:
+            flags.append(f"Abnormal ATR move ({atr_mult:+.1f}x ATR)")
         if prev and prev != s.state:
             flags.append("state change")
         if s.rsi >= overbought:
