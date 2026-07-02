@@ -25,6 +25,8 @@ scoring:
   pullback_atr_mult: 0.5  # price within this many ATRs of MA50 => "pullback"
   accel_rsi: 62           # trend>=75 + (breakout or RSI>=this) => Trend Acceleration
   rs_lookback: 126        # trailing-return window for relative strength (~6 months)
+  extended_ma200_mult: 2.0  # flag a buy "strong but parabolic — stage in, don't chase" when
+                            # price >= this multiple of its 200-day average (memory names ~2.7-3.3x)
   # MACD momentum confirmation for Trend Acceleration
   macd_fast: 12
   macd_slow: 26
@@ -51,7 +53,7 @@ volume:
 daily_review:
   price_move:
     lookback: 21          # prior daily returns for the close-to-close return z-score
-    abnormal_z: 1.5       # |return_z| >= this => "Abnormal price move"
+    abnormal_z: 1.25       # |return_z| >= this => "Abnormal price move"
 
 # Fundamentals / valuation hints (quant/valuation.py). Report-only — does NOT feed the
 # decision engine or backtest. PE/PEG/analyst target normalised to a vendor-neutral schema, so
@@ -224,6 +226,12 @@ lifecycle:
   max_positions: 8        # hold at most this many names (out of the wider watchlist).
                           # With 15% big-tier targets + 10% cash floor this concentrates
                           # in ~6 mega-caps; raise to ~10 to express the full tiered book
+  max_watchlist: 5        # absolute ceiling on watchlist candidates shown
+  watchlist_extra: 3      # surface this many beyond open slots for selection room; only the
+                          # top open_slots are actually buyable (and executed in the backtest)
+  entry_rs_min: 0.0       # candidate must beat this 6-month relative strength (rs) to
+                          # surface; else the watchlist stays empty rather than padding
+                          # weak picks. Raise (e.g. 0.05) to demand stronger leadership.
   entry_trend_min: 75     # min trend score to open a new watchlist position
   entry_default_weight: 0.06  # DEFAULT target weight for any name not listed in
                               # target_weights below (applies to new entries AND held
