@@ -28,6 +28,37 @@ class MacroState:
 
 
 @dataclass
+class SectorRow:
+    """One sector/thematic/cross-asset ETF's rotation snapshot (see quant/sectors.py)."""
+    symbol: str
+    group: str            # sector | thematic | breadth | cross_asset
+    state: str            # asset-state ladder label (see scoring.asset_state)
+    day_change_pct: float
+    rs_micro: float       # ultra-short (5d) relative return vs SPY — catches a leader fading this week
+    rs_fast: float        # short-horizon relative return vs SPY (RRG momentum axis)
+    rs_slow: float        # medium-horizon relative return vs SPY (RRG level axis)
+    quadrant: str         # Leading | Weakening | Lagging | Improving (equity ETFs); "—" for cross-asset
+    rvol: float
+    vol_z: float
+    vol_state: str        # Normal | Elevated | Abnormal
+    rsi: float
+    flags: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SectorState:
+    """Sector-rotation backdrop from a configurable ETF map (see quant/sectors.py). Report-only
+    context that runs PARALLEL to MarketState/MacroState — never feeds scoring/decision/backtest.
+    Equity ETFs get an RRG quadrant off relative strength vs SPY; cross-asset ETFs drive the
+    risk radar."""
+    backdrop: str                 # one-line header, e.g. "SOXX/XLK leading · XLE lagging · risk-on"
+    risk_radar: str               # risk-on | mixed | risk-off (off TLT/GLD/HYG vs SPY)
+    rows: list[SectorRow] = field(default_factory=list)
+    rotations: list[str] = field(default_factory=list)  # flagged rotation/abnormality notes
+    notes: list[str] = field(default_factory=list)       # risk-radar detail + quadrant tallies
+
+
+@dataclass
 class Signal:
     """Per-symbol technical snapshot + derived scores."""
     symbol: str

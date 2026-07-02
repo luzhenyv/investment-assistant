@@ -66,6 +66,7 @@ def main() -> None:
         md_path, json_path, generated_at, ctx.mkt, ctx.holding_recs, ctx.watchlist_recs,
         ctx.option_analyses, ctx.summary, ctx.fundamentals, report_positioning, ctx.roleviews,
         outliers, ohlcv=ohlcv, as_of_bar=as_of_bar, stale=stale, macro=ctx.macro_state,
+        sector=ctx.sector_state,
     )
     print(f"Report written to {md_path}")
     print(f"  {len(outliers)} outlier(s) flagged")

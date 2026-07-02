@@ -23,13 +23,14 @@ from quant import (
     clock, decision, macro, market, observations, option_flow, options, portfolio, providers,
     roles, scoring, valuation,
 )
+from quant import sectors as sector_lens  # aliased: `sectors` is a local var below (symbol→GICS map)
 
 if TYPE_CHECKING:
     import polars as pl
 
     from quant.models import (
         Fundamentals, Holding, MacroState, MarketState, OptionAnalysis, OptionPositioning,
-        OptionStrategy, Recommendation, RoleView, Signal,
+        OptionStrategy, Recommendation, RoleView, SectorState, Signal,
     )
 
 
@@ -49,6 +50,7 @@ class AnalysisContext:
     qqq: Signal
     mkt: MarketState
     macro_state: MacroState
+    sector_state: SectorState | None            # report-only ETF rotation lens (None when disabled)
     fundamentals: dict[str, Fundamentals]
     prices: dict[str, float]
     total_value: float
@@ -101,21 +103,30 @@ def run(
 
     underlyings = {s.underlying for s in strategies}
     symbols = sorted(set(watch) | set(holdings) | underlyings)
-    print(f"Fetching data for {len(symbols)} symbols + SPY/QQQ/VIX ...")
+
+    # Report-only sector/macro ETF map. Fetched + scored as context (like SPY/QQQ), never mixed into
+    # `signals` — so it can't reach the decision engine or the observation DB, keeping the backtest fixed.
+    sectors_cfg = cfg.get("sectors", {})
+    etf_syms: list[str] = []
+    if sectors_cfg.get("enabled"):
+        etf_syms = sorted({s for group in (sectors_cfg.get("groups") or {}).values() for s in group})
+    print(f"Fetching data for {len(symbols)} symbols + SPY/QQQ/VIX"
+          f"{f' + {len(etf_syms)} sector ETFs' if etf_syms else ''} ...")
 
     data_cfg = cfg["data"]
     history = providers.fetch_history(
-        symbols + ["SPY", "QQQ"], data_cfg["period"], data_cfg["min_rows"],
+        symbols + ["SPY", "QQQ"] + etf_syms, data_cfg["period"], data_cfg["min_rows"],
         force_refresh=force_refresh,
     )
     vix = providers.fetch_vix(data_cfg["period"])
     sectors = providers.fetch_sectors(symbols)
     raw_fund = providers.fetch_fundamentals(symbols, cfg)
 
+    context_only = {"SPY", "QQQ", *etf_syms}
     signals = {
         sym: scoring.build_signal(sym, df, cfg)
         for sym, df in history.items()
-        if sym not in ("SPY", "QQQ")
+        if sym not in context_only
     }
     if "SPY" not in history or "QQQ" not in history:
         raise SystemExit("Could not fetch SPY/QQQ — cannot determine market regime.")
@@ -123,6 +134,8 @@ def run(
     qqq = scoring.build_signal("QQQ", history["QQQ"], cfg)
     mkt = market.detect_market(spy, qqq, vix)
     macro_state = macro.detect_macro(providers.fetch_macro(cfg), cfg)  # report-only context
+    sector_signals = {s: scoring.build_signal(s, history[s], cfg) for s in etf_syms if s in history}
+    sector_state = sector_lens.detect_rotation(sector_signals, spy, history, cfg) if sector_signals else None
 
     fundamentals = {
         sym: valuation.build(sym, raw, signals[sym].price, cfg, stale=raw.get("_stale", False))
@@ -244,7 +257,8 @@ def run(
     return AnalysisContext(
         cfg=cfg, watch=watch, cash=cash, holdings=holdings, strategies=strategies,
         history=history, vix=vix, sectors=sectors, signals=signals, spy=spy, qqq=qqq,
-        mkt=mkt, macro_state=macro_state, fundamentals=fundamentals, prices=prices,
+        mkt=mkt, macro_state=macro_state, sector_state=sector_state,
+        fundamentals=fundamentals, prices=prices,
         total_value=total_value, weights=weights, cash_state=cash_state, cash_low=cash_low,
         cash_frac=cash_frac, deployable=deployable, holding_recs=holding_recs,
         watchlist_recs=watchlist_recs, option_analyses=option_analyses,

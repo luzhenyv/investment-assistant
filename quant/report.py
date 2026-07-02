@@ -6,7 +6,7 @@ from dataclasses import asdict
 
 from quant.models import (
     Fundamentals, MacroState, MarketState, OptionAnalysis, OptionPositioning, Recommendation,
-    RoleView,
+    RoleView, SectorState,
 )
 
 
@@ -19,6 +19,34 @@ def _macro_block(macro: MacroState) -> list[str]:
     out.append("")
     out.append("_Report-only FRED context (does not feed scoring/decision). The macro-review skill "
                "adds the calendar (FOMC/CPI/PCE/NFP) and what would change the read._")
+    out.append("")
+    return out
+
+
+def _sector_block(sector: SectorState) -> list[str]:
+    """Sector-rotation block — configurable ETF map classified into RRG quadrants + abnormality
+    flags. Report-only context parallel to the market/macro blocks; never feeds the engine."""
+    out = [f"## Sector rotation: **{sector.backdrop}**", ""]
+    for note in sector.notes:
+        out.append(f"- {note}")
+    out.append("")
+    rows = []
+    for r in sector.rows:
+        rows.append([
+            r.symbol, r.group, r.quadrant, f"{r.day_change_pct:+.1%}",
+            f"{r.rs_micro:+.0%}", f"{r.rs_fast:+.0%}", f"{r.rs_slow:+.0%}",
+            r.vol_state, f"{r.rsi:.0f}", " · ".join(r.flags) or "—",
+        ])
+    out += _table(
+        ["ETF", "Group", "Quadrant", "Day", "RS 5d", "RS 21d", "RS 63d", "Vol", "RSI", "Flags"],
+        rows, ["l", "l", "l", "r", "r", "r", "r", "l", "r", "l"],
+    )
+    if sector.rotations:
+        out.append("**Rotation / abnormal flags:**")
+        out += [f"- {r}" for r in sector.rotations]
+        out.append("")
+    out.append("_Report-only ETF rotation (RRG quadrant off relative strength vs SPY; does not feed "
+               "scoring/decision). RS is relative return vs SPY over 5d/21d/63d._")
     out.append("")
     return out
 
@@ -220,6 +248,7 @@ def render_markdown(
     positioning: dict[str, OptionPositioning] | None = None,
     roleviews: dict[str, RoleView] | None = None,
     macro: MacroState | None = None,
+    sector: SectorState | None = None,
 ) -> str:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
@@ -233,6 +262,9 @@ def render_markdown(
 
     if macro is not None:
         out += _macro_block(macro)
+
+    if sector is not None:
+        out += _sector_block(sector)
 
     out.append("## Portfolio")
     out.append("")
@@ -328,13 +360,14 @@ def generate(
     positioning: dict[str, OptionPositioning] | None = None,
     roleviews: dict[str, RoleView] | None = None,
     macro: MacroState | None = None,
+    sector: SectorState | None = None,
 ) -> None:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
     roleviews = roleviews or {}
     md = render_markdown(
         generated_at, market, holding_recs, watchlist_recs, option_analyses, summary,
-        fundamentals, positioning, roleviews, macro,
+        fundamentals, positioning, roleviews, macro, sector,
     )
     with open(md_path, "w") as f:
         f.write(md)
@@ -343,6 +376,7 @@ def generate(
         "generated_at": generated_at,
         "market": asdict(market),
         "macro": asdict(macro) if macro is not None else None,
+        "sectors": asdict(sector) if sector is not None else None,
         "portfolio": summary,
         "holdings": [asdict(r) for r in holding_recs],
         "watchlist": [asdict(r) for r in watchlist_recs],

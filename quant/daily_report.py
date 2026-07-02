@@ -13,7 +13,7 @@ from dataclasses import asdict
 from quant import report
 from quant.models import (
     Fundamentals, MacroState, MarketState, OptionAnalysis, OptionPositioning, Recommendation,
-    RoleView,
+    RoleView, SectorState,
 )
 
 
@@ -88,6 +88,7 @@ def generate(
     as_of_bar: str | None = None,
     stale: bool = False,
     macro: MacroState | None = None,
+    sector: SectorState | None = None,
 ) -> None:
     """Write the daily `.md` (outliers section + the weekly review body) and the `.json`."""
     fundamentals = fundamentals or {}
@@ -98,7 +99,7 @@ def generate(
 
     body = report.render_markdown(
         generated_at, market, holding_recs, watchlist_recs, option_analyses, summary,
-        fundamentals, positioning, roleviews, macro,
+        fundamentals, positioning, roleviews, macro, sector,
     ).split("\n")[2:]  # drop the weekly H1 title + its blank line; we set our own header
 
     lines = [f"# Daily Review — {generated_at}", ""]
@@ -122,6 +123,7 @@ def generate(
         "stale": stale,
         "market": asdict(market),
         "macro": asdict(macro) if macro is not None else None,
+        "sectors": asdict(sector) if sector is not None else None,
         "portfolio": summary,
         "ohlcv": ohlcv,
         "outliers": outliers,

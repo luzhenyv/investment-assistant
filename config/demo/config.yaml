@@ -103,6 +103,23 @@ macro:
     nfci_loose: -0.10      # NFCI below this = loose conditions
     nfci_tight: 0.10       # NFCI above this = tight conditions
 
+# Sector-rotation lens (quant/sectors.py). Report-only context parallel to the macro block — a
+# configurable ETF map, benchmarked to SPY, classified into RRG quadrants (Leading / Weakening /
+# Lagging / Improving) off relative strength on two horizons, plus an abnormal-move/volume overlay.
+# Fetched + scored as context (like SPY/QQQ); NEVER feeds scoring/decision, so the backtest is fixed.
+sectors:
+  enabled: true
+  lookbacks:
+    micro: 5               # ultra-short RS — flags a leader fading / laggard turning up this week
+    fast: 21              # short-horizon RS (RRG momentum axis)
+    slow: 63              # medium-horizon RS (RRG level axis)
+  abnormal_z: 1.5          # |daily-return z| to flag an abnormal ETF move
+  groups:
+    sector:      [XLK, XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLB, XLRE, XLU]  # 11 SPDR sectors
+    thematic:    [SOXX, XBI, IGV]     # semis / biotech / software sleeves
+    breadth:     [RSP]                # equal-weight S&P — concentration tell
+    cross_asset: [TLT, GLD, HYG]      # duration / gold / HY credit — risk radar (no quadrant)
+
 # Horizon roles (quant/roles.py). Report-only — does NOT feed the decision engine. Hand-set a
 # symbol's role here; unlisted names get an engine-SUGGESTED role from trend+RS+valuation.
 # Each role carries its own take-profit / stop-loss discipline + option playbook (role_rules).

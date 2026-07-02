@@ -49,7 +49,7 @@ def main() -> None:
     report.generate(
         md_path, json_path, generated_at, ctx.mkt, ctx.holding_recs, ctx.watchlist_recs,
         ctx.option_analyses, ctx.summary, ctx.fundamentals, ctx.positioning, ctx.roleviews,
-        macro=ctx.macro_state,
+        macro=ctx.macro_state, sector=ctx.sector_state,
     )
     print(f"Report written to {md_path}")
     print("  " + observations.record(STORE, as_of_bar, rows, cadence="weekly"))

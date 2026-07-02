@@ -15,7 +15,8 @@ job is that last mile: explain each outlier, and judge whether today's label is 
 
 **Locate first** (newest wins): `output/<profile>/daily_review_*.md` and its sibling `.json`. The
 JSON carries `outliers` (the flagged names), per-symbol `scores` (now incl. `rvol`, `vol_z`,
-`vol_state`), `holdings`/`watchlist` intents, and `market`. If no file exists, tell the user to run
+`vol_state`), `holdings`/`watchlist` intents, `market`, and a `sectors` block (ETF rotation lens —
+see below). If no file exists, tell the user to run
 `uv run daily_review.py` first. Ground every "why" in the engine code — `quant/indicators.py`
 (`rvol`, `volume_zscore`) and `quant/scoring.py` (`volume_state`, `asset_state`) — don't trust
 remembered thresholds.
@@ -27,6 +28,18 @@ Each `outliers` row carries `flags` (why it fired), `day_change_pct`, `rvol`, `v
   intuitive companion (2.0 = twice the 20-day norm).
 - **State change** — the `asset_state` ladder label differs from yesterday's stored row.
 - **RSI extreme** — `≥ rsi_overbought` or `≤ rsi_oversold`.
+
+## Sector rotation (the `sectors` block)
+The `.json` `sectors` block (from `quant/sectors.py`, report-only) frames each outlier against its
+sector. `rows[]` carries per-ETF `quadrant` (**Leading** strong & strengthening · **Weakening** strong
+but fading · **Lagging** weak & weakening · **Improving** weak but strengthening),
+`rs_micro`/`rs_fast`/`rs_slow` (relative return vs SPY over 5d/21d/63d), and `flags` (`Abnormal move`,
+`Leader pullback`, `Rotation-in attempt`, and the 5d-momentum reads `Leader fading (5d)` /
+`Turning up (5d)`). Note the quadrant is the medium-term (21d/63d) read, so a leader can be `Leading`
+yet carry `Leader fading (5d)` — that's the "still the leader, but rolling over this week" nuance. `rotations` is the flagged shortlist; `risk_radar` (risk-on/mixed/risk-off) is
+the cross-asset read off TLT/GLD/HYG. Use it to separate **idiosyncratic** from **sector-beta** moves:
+a name that fell on the day its whole sector's ETF shows `Leader pullback` is riding sector rotation,
+not a company-specific crack — say so, and don't over-attribute to a stock catalyst.
 
 ## Explain each outlier (this is the whole job)
 1. **Volume direction = the read.** Abnormal volume is meaningless without price:
