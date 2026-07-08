@@ -8,7 +8,11 @@
 #   core      SHARE COUNT of long-term holdings you don't intend to sell. Protected in
 #             weak regimes (Correction / Panic) — the engine hedges instead of selling.
 #   trading   SHARE COUNT of tactical shares you're willing to rotate out of.
-#   avg_cost  Average cost basis per share. INFORMATIONAL ONLY — no logic reads it.
+#   avg_cost  Per-share cost basis under cost_method (may be negative when diluted).
+#             INFORMATIONAL ONLY — no logic reads it.
+#   cost_method  How avg_cost is computed: "diluted" (摊薄 — nets realized P&L into the
+#             shares you still hold, so it can go negative = house money) or "average"
+#             (持仓 — average price paid for shares held now, always ≥ 0). INFORMATIONAL ONLY.
 #   plan      Your own one-line plan for this name — intended role/horizon, target,
 #             conditions, thesis. FREEFORM and OPTIONAL. No engine logic reads it; it's
 #             surfaced in the report and JSON so the weekly-review LLM can compare your
@@ -17,6 +21,7 @@
 # Position weight = total shares (core + trading); the split only matters under stress.
 # Share counts may be fractional. Full guide: docs/REAL_PORTFOLIO_SETUP.md
 cash: 0
+cost_method: diluted   # diluted | average
 
 positions:
   # SYMBOL: { core: <shares>, trading: <shares>, avg_cost: <price/share> }
