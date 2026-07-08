@@ -24,13 +24,15 @@ from quant import (
     roles, scoring, valuation,
 )
 from quant import sectors as sector_lens  # aliased: `sectors` is a local var below (symbol→GICS map)
+from quant import levels as levels_mod  # aliased: `levels` is the lens dict on the context below
+from quant import manual_levels
 
 if TYPE_CHECKING:
     import polars as pl
 
     from quant.models import (
         Fundamentals, Holding, MacroState, MarketState, OptionAnalysis, OptionPositioning,
-        OptionStrategy, Recommendation, RoleView, SectorState, Signal,
+        OptionStrategy, Recommendation, RoleView, SectorState, Signal, Zone,
     )
 
 
@@ -51,6 +53,8 @@ class AnalysisContext:
     mkt: MarketState
     macro_state: MacroState
     sector_state: SectorState | None            # report-only ETF rotation lens (None when disabled)
+    levels: dict[str, list[Zone]]               # report-only S/R zones, breadth-controlled (empty when disabled)
+    levels_source: dict[str, str]               # sym → "manual" | "manual-stale" | "auto" (provenance of levels[sym])
     fundamentals: dict[str, Fundamentals]
     prices: dict[str, float]
     total_value: float
@@ -254,10 +258,43 @@ def run(
                 if sym in holdings:
                     roleviews[sym].user_plan = holdings[sym].plan
 
+    # Structural support/resistance zones (report-only, never touches signals/scoring/decision).
+    # Same breadth as positioning: "full" covers every name (daily → the DB); "actionable" only the recs.
+    # Provenance: a hand-curated levels.yaml (manual_levels) is authoritative per symbol; names absent
+    # from it fall back to auto-detection when manual_fallback_auto (default true). A stale curation is
+    # still used but flagged. See quant/manual_levels.py.
+    levels, levels_source = {}, {}
+    lev_cfg = cfg.get("levels", {})
+    if lev_cfg.get("enabled", False):
+        curated = manual_levels.load(manual_levels.path_for(config))
+        refresh_days = lev_cfg.get("manual_refresh_days", 30)
+        fallback_auto = lev_cfg.get("manual_fallback_auto", True)
+        lvl_syms = sorted(signals) if breadth == "full" else sorted(
+            {r.symbol for r in holding_recs} | {r.symbol for r in watchlist_recs}
+        )
+        for sym in lvl_syms:
+            if sym not in signals or sym not in history:
+                continue
+            hit = manual_levels.zones_for(sym, prices.get(sym), curated, refresh_days)
+            if hit is not None:
+                zs, stale = hit
+                levels[sym] = zs
+                levels_source[sym] = "manual-stale" if stale else "manual"
+            elif fallback_auto:
+                zs = levels_mod.detect_zones(history[sym], cfg, current_price=prices.get(sym))
+                if zs:
+                    levels[sym] = zs
+                    levels_source[sym] = "auto"
+        n_manual = sum(1 for v in levels_source.values() if v.startswith("manual"))
+        n_stale = sum(1 for v in levels_source.values() if v == "manual-stale")
+        print(f"  levels: {len(levels)}/{len(lvl_syms)} names "
+              f"({n_manual} curated, {n_stale} stale, {len(levels) - n_manual} auto)")
+
     return AnalysisContext(
         cfg=cfg, watch=watch, cash=cash, holdings=holdings, strategies=strategies,
         history=history, vix=vix, sectors=sectors, signals=signals, spy=spy, qqq=qqq,
-        mkt=mkt, macro_state=macro_state, sector_state=sector_state,
+        mkt=mkt, macro_state=macro_state, sector_state=sector_state, levels=levels,
+        levels_source=levels_source,
         fundamentals=fundamentals, prices=prices,
         total_value=total_value, weights=weights, cash_state=cash_state, cash_low=cash_low,
         cash_frac=cash_frac, deployable=deployable, holding_recs=holding_recs,

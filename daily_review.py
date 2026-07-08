@@ -62,11 +62,13 @@ def main() -> None:
     # positioning still lands in the observation store above.
     actionable = {r.symbol for r in ctx.holding_recs} | {r.symbol for r in ctx.watchlist_recs}
     report_positioning = {k: v for k, v in ctx.positioning.items() if k in actionable}
+    report_levels = {k: v for k, v in ctx.levels.items() if k in actionable}
+    report_levels_source = {k: v for k, v in ctx.levels_source.items() if k in actionable}
     daily_report.generate(
         md_path, json_path, generated_at, ctx.mkt, ctx.holding_recs, ctx.watchlist_recs,
         ctx.option_analyses, ctx.summary, ctx.fundamentals, report_positioning, ctx.roleviews,
         outliers, ohlcv=ohlcv, as_of_bar=as_of_bar, stale=stale, macro=ctx.macro_state,
-        sector=ctx.sector_state,
+        sector=ctx.sector_state, levels=report_levels, levels_source=report_levels_source,
     )
     print(f"Report written to {md_path}")
     print(f"  {len(outliers)} outlier(s) flagged")

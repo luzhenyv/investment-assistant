@@ -1,0 +1,21 @@
+# Support/resistance zones — the engine's authoritative S/R when a symbol is listed here.
+#
+# Seeded by scripts/gen_levels.py from the auto-detector, then HAND-EDIT for precision.
+#   strength : small | medium | strong | super-strong
+#   kind     : optional (support/resistance); inferred from current price when omitted
+#   note     : optional free text for your own reference
+# A symbol absent from this file falls back to auto-detection. Bump a symbol's as_of when you
+# re-review it; the file goes "stale" (still loaded, flagged in the report) after
+# levels.manual_refresh_days. Re-seed one name with: gen_levels.py <SYM> --force
+as_of: '2026-07-08'
+symbols:
+  MU:
+    as_of: '2026-07-08'
+    zones:
+    - {low: 819, high: 880, strength: strong, note: "2024 breakout retest shelf"}
+    - {low: 950, high: 1000, strength: medium, note: "round-number supply"}
+  NVDA:
+    as_of: '2026-07-08'
+    zones:
+    - {low: 190, high: 201, strength: strong, note: "prior breakout base"}
+    - {low: 209, high: 220, strength: medium}

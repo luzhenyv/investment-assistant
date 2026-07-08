@@ -4,6 +4,7 @@ import polars as pl
 
 from quant import levels
 from quant.levels import _Candidate
+from quant.models import Zone
 
 # Minimal config mirroring config/demo/config.yaml's `levels:` block defaults.
 LEV = {
@@ -142,3 +143,33 @@ def test_volume_agnostic_path():
     assert all(len(z.methods) >= 2 for z in ohlc_only)  # confluence filter (min_methods=2)
     with_vol = levels.detect_zones(_frame(closes, [100] * len(closes)), LEV)
     assert with_vol  # runs with Volume present too
+
+
+def _zone(low, high, kind, label="strong", methods=("fib", "swing", "volume")):
+    return Zone(low=low, high=high, score=1.0, label=label, kind=kind, touches=1,
+                methods=list(methods))
+
+
+def test_nearest_zones_picks_closest_each_side():
+    zones = [
+        _zone(80, 82, "support"), _zone(90, 92, "support"),   # nearest support = 90–92
+        _zone(110, 112, "resistance"), _zone(120, 122, "resistance"),  # nearest resist = 110–112
+    ]
+    sup, res = levels.nearest_zones(100.0, zones)
+    assert (sup.low, sup.high) == (90, 92)
+    assert (res.low, res.high) == (110, 112)
+
+
+def test_nearest_zones_price_none_uses_kind():
+    # With price=None it ranks by kind alone: highest-high support, lowest-low resistance.
+    zones = [_zone(80, 82, "support"), _zone(90, 92, "support"),
+             _zone(110, 112, "resistance"), _zone(120, 122, "resistance")]
+    sup, res = levels.nearest_zones(None, zones)
+    assert (sup.low, sup.high) == (90, 92)
+    assert (res.low, res.high) == (110, 112)
+
+
+def test_nearest_zones_missing_side_returns_none():
+    sup, res = levels.nearest_zones(100.0, [_zone(90, 92, "support")])
+    assert sup is not None and res is None
+    assert levels.nearest_zones(100.0, []) == (None, None)

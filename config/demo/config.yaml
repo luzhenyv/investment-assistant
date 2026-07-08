@@ -168,6 +168,9 @@ role_rules:
 # feed the decision engine yet. Strength is fuzzy and RELATIVE to each ticker, so labels
 # come from within-ticker score quantiles, not absolute cutoffs.
 levels:
+  enabled: true          # report-only S/R lens in weekly/daily reports + observation store (no decision/backtest impact)
+  manual_refresh_days: 30 # a curated levels.yaml goes "stale" (still loaded, flagged) after this many days
+  manual_fallback_auto: true # symbols absent from levels.yaml fall back to auto-detection
   pivot_k: 5              # fractal half-window: a swing high/low is the extreme of 2k+1 bars
   lookback_bars: 1000     # ~4y of daily structure (weekly uses lookback/5); the trader
                           # reads multi-year weekly structure, so reach back far enough

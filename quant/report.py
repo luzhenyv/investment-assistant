@@ -4,9 +4,10 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
+from quant import levels as levels_mod
 from quant.models import (
     Fundamentals, MacroState, MarketState, OptionAnalysis, OptionPositioning, Recommendation,
-    RoleView, SectorState,
+    RoleView, SectorState, Zone,
 )
 
 
@@ -128,10 +129,12 @@ def _recs_signals_table(
 
 
 def _recs_notes(
-    recs: list[Recommendation], fundamentals: dict[str, Fundamentals], roleviews: dict[str, RoleView]
+    recs: list[Recommendation], fundamentals: dict[str, Fundamentals], roleviews: dict[str, RoleView],
+    levels: dict[str, list[Zone]] | None = None,
 ) -> list[str]:
     """One compact note per symbol: the reason, the valuation detail not in the table
-    (PE/fwd/PEG), the role-mismatch flag, the playbook and ways to express."""
+    (PE/fwd/PEG), the role-mismatch flag, the playbook, ways to express, nearest S/R."""
+    levels = levels or {}
     lines = []
     for r in recs:
         f = fundamentals.get(r.symbol)
@@ -156,6 +159,16 @@ def _recs_notes(
         if rv is not None and rv.user_plan:
             engine = f"{rv.role} · {rv.horizon}" if rv.horizon and rv.horizon != "—" else rv.role
             parts.append(f"📝 your plan: {rv.user_plan} (engine: {engine})")
+        zs = levels.get(r.symbol)
+        if zs:
+            sup, res = levels_mod.nearest_zones(None, zs)
+            sr = []
+            if sup is not None:
+                sr.append(f"S ${sup.mid:,.0f} ({sup.label}·{len(sup.methods)}m)")
+            if res is not None:
+                sr.append(f"R ${res.mid:,.0f} ({res.label}·{len(res.methods)}m)")
+            if sr:
+                parts.append("S/R: " + " / ".join(sr))
         if parts:
             lines.append(f"- **{r.symbol}** — " + " · ".join(parts))
     if lines:
@@ -237,6 +250,45 @@ def _positioning_tables(positioning: dict[str, OptionPositioning]) -> list[str]:
     return out
 
 
+def _zone_str(z: Zone | None) -> str:
+    """A zone as a price band + strength tag: hand-curated → `$118–$121 (strong·curated)`,
+    auto-detected → `$118–$121 (strong·3m·flip)` (distinct-method confluence count)."""
+    if z is None:
+        return "—"
+    if z.methods == ["manual"]:
+        tag = f"{z.label}·curated"
+    else:
+        tag = f"{z.label}·{len(z.methods)}m" + ("·flip" if z.flipped else "")
+    return f"${z.low:,.0f}–${z.high:,.0f} ({tag})"
+
+
+_SRC_TAG = {"manual": "curated", "manual-stale": "curated ⚠stale", "auto": "auto"}
+
+
+def _levels_block(levels: dict[str, list[Zone]], levels_source: dict[str, str]) -> list[str]:
+    """One row per symbol: nearest support below and nearest resistance above, the strength label,
+    and provenance (curated / auto). Report-only structural S/R — a hand-curated levels.yaml is
+    authoritative where present; the auto detector's edge is concentrated in ≥3-method support."""
+    rows = []
+    for sym in sorted(levels):
+        sup, res = levels_mod.nearest_zones(None, levels[sym])
+        rows.append([sym, _zone_str(sup), _zone_str(res),
+                     _SRC_TAG.get(levels_source.get(sym, "auto"), "auto")])
+    out = ["## Support / Resistance (structural)", ""]
+    out += _table(["Symbol", "Nearest support", "Nearest resistance", "Src"],
+                  rows, ["l", "r", "r", "l"])
+    n_stale = sum(1 for s in levels_source.values() if s == "manual-stale")
+    if n_stale:
+        out.append(f"- ⚠️ {n_stale} name(s) on **stale curation** (past `manual_refresh_days`) — "
+                   f"re-review and bump their `as_of` in `levels.yaml`.")
+        out.append("")
+    out.append("_Report-only S/R (does not feed scoring/decision). `curated` = hand-set in "
+               "levels.yaml (authoritative); `auto` = quant/levels.py detector, whose edge is "
+               "concentrated in ≥3-method support. Treat strength as a prior, not a hard level._")
+    out.append("")
+    return out
+
+
 def render_markdown(
     generated_at: str,
     market: MarketState,
@@ -249,10 +301,14 @@ def render_markdown(
     roleviews: dict[str, RoleView] | None = None,
     macro: MacroState | None = None,
     sector: SectorState | None = None,
+    levels: dict[str, list[Zone]] | None = None,
+    levels_source: dict[str, str] | None = None,
 ) -> str:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
     roleviews = roleviews or {}
+    levels = levels or {}
+    levels_source = levels_source or {}
     out: list[str] = [f"# Weekly Investment Review — {generated_at}", ""]
 
     out.append(f"## Market: **{market.regime}**  (bull score {market.bull_score:.0f}/100)")
@@ -299,7 +355,7 @@ def render_markdown(
     out.append("### Signals & valuation")
     out.append("")
     out += _recs_signals_table(holding_recs, fundamentals, with_sector=False)
-    notes = _recs_notes(holding_recs, fundamentals, roleviews)
+    notes = _recs_notes(holding_recs, fundamentals, roleviews, levels)
     if notes:
         out.append("### Notes")
         out.append("")
@@ -318,6 +374,9 @@ def render_markdown(
         out.append("")
         out += _positioning_tables(positioning)
 
+    if levels:
+        out += _levels_block(levels, levels_source)
+
     out.append("## Watchlist candidates")
     out.append("")
     if watchlist_recs:
@@ -325,7 +384,7 @@ def render_markdown(
         out.append("### Signals & valuation")
         out.append("")
         out += _recs_signals_table(watchlist_recs, fundamentals, with_sector=True)
-        notes = _recs_notes(watchlist_recs, fundamentals, roleviews)
+        notes = _recs_notes(watchlist_recs, fundamentals, roleviews, levels)
         if notes:
             out.append("### Notes")
             out.append("")
@@ -361,13 +420,17 @@ def generate(
     roleviews: dict[str, RoleView] | None = None,
     macro: MacroState | None = None,
     sector: SectorState | None = None,
+    levels: dict[str, list[Zone]] | None = None,
+    levels_source: dict[str, str] | None = None,
 ) -> None:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
     roleviews = roleviews or {}
+    levels = levels or {}
+    levels_source = levels_source or {}
     md = render_markdown(
         generated_at, market, holding_recs, watchlist_recs, option_analyses, summary,
-        fundamentals, positioning, roleviews, macro, sector,
+        fundamentals, positioning, roleviews, macro, sector, levels, levels_source,
     )
     with open(md_path, "w") as f:
         f.write(md)
@@ -384,6 +447,8 @@ def generate(
         "fundamentals": {sym: asdict(f) for sym, f in fundamentals.items()},
         "positioning": {sym: asdict(p) for sym, p in positioning.items()},
         "roles": {sym: asdict(rv) for sym, rv in roleviews.items()},
+        "levels": {sym: [asdict(z) for z in zs] for sym, zs in levels.items()},
+        "levels_source": levels_source,
     }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)

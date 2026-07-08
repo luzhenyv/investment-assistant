@@ -13,7 +13,7 @@ from dataclasses import asdict
 from quant import report
 from quant.models import (
     Fundamentals, MacroState, MarketState, OptionAnalysis, OptionPositioning, Recommendation,
-    RoleView, SectorState,
+    RoleView, SectorState, Zone,
 )
 
 
@@ -89,6 +89,8 @@ def generate(
     stale: bool = False,
     macro: MacroState | None = None,
     sector: SectorState | None = None,
+    levels: dict[str, list[Zone]] | None = None,
+    levels_source: dict[str, str] | None = None,
 ) -> None:
     """Write the daily `.md` (outliers section + the weekly review body) and the `.json`."""
     fundamentals = fundamentals or {}
@@ -96,10 +98,12 @@ def generate(
     roleviews = roleviews or {}
     outliers = outliers or []
     ohlcv = ohlcv or {}
+    levels = levels or {}
+    levels_source = levels_source or {}
 
     body = report.render_markdown(
         generated_at, market, holding_recs, watchlist_recs, option_analyses, summary,
-        fundamentals, positioning, roleviews, macro, sector,
+        fundamentals, positioning, roleviews, macro, sector, levels, levels_source,
     ).split("\n")[2:]  # drop the weekly H1 title + its blank line; we set our own header
 
     lines = [f"# Daily Review — {generated_at}", ""]
@@ -133,6 +137,8 @@ def generate(
         "fundamentals": {sym: asdict(f) for sym, f in fundamentals.items()},
         "positioning": {sym: asdict(p) for sym, p in positioning.items()},
         "roles": {sym: asdict(rv) for sym, rv in roleviews.items()},
+        "levels": {sym: [asdict(z) for z in zs] for sym, zs in levels.items()},
+        "levels_source": levels_source,
     }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)

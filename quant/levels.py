@@ -498,3 +498,22 @@ def detect_zones(df: pl.DataFrame, cfg: dict, current_price: float | None = None
     _label_zones(zones, lev)
     zones.sort(key=lambda z: z.score, reverse=True)
     return zones
+
+
+def nearest_zones(price: float | None, zones: list[Zone]) -> tuple[Zone | None, Zone | None]:
+    """Nearest support below `price` and nearest resistance above it.
+
+    Zones already carry `kind` relative to the detection price, so with `price=None`
+    the nearest support is simply the highest-`high` support zone and the nearest
+    resistance the lowest-`low` resistance zone. When `price` is given, prefer a zone
+    strictly on the expected side (support high <= price, resistance low >= price),
+    falling back to the closest of that kind when candidates straddle price. Each side
+    returns None independently when absent."""
+    supports = [z for z in zones if z.kind == "support"]
+    resists = [z for z in zones if z.kind == "resistance"]
+    if price is not None:
+        supports = [z for z in supports if z.high <= price] or supports
+        resists = [z for z in resists if z.low >= price] or resists
+    sup = max(supports, key=lambda z: z.high, default=None)
+    res = min(resists, key=lambda z: z.low, default=None)
+    return sup, res

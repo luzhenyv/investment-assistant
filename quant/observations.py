@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from quant import decision, indicators
+from quant import decision, indicators, levels as levels_mod
 
 if TYPE_CHECKING:
     from quant.pipeline import AnalysisContext
@@ -81,6 +81,15 @@ SCHEMA: dict[str, pl.DataType] = {
     # cadence of the run that produced this row (appended last; null in pre-cadence files → "daily").
     # Daily runs the full universe; weekly appends its own snapshot — see record()/build_rows().
     "cadence": _S,
+    # structural support/resistance (report-only S/R zones — see quant/levels.py; null when disabled).
+    # Nearest support-below / resistance-above + their strength label, confluence (distinct methods),
+    # and signed distance from price. Laid down for the future forward-return evaluator to grade.
+    "nearest_support": _F, "nearest_resistance": _F,
+    "sr_support_label": _S, "sr_support_methods": _I,
+    "sr_resistance_label": _S, "sr_resistance_methods": _I,
+    "sr_dist_support_pct": _F, "sr_dist_resistance_pct": _F,
+    # provenance of the S/R zones: manual (curated levels.yaml) | manual-stale | auto | null(none)
+    "sr_source": _S,
 }
 
 
@@ -196,6 +205,7 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
         day_move = day_change(ctx.history[sym])
         move_z = indicators.return_zscore(ctx.history[sym]["Close"], move_lookback)
         atr_mult = indicators.atr_move_multiple(ctx.history[sym]["Close"], s.atr)
+        z_sup, z_res = levels_mod.nearest_zones(s.price, ctx.levels.get(sym, []))
         rows.append({
             "create_time": generated_at, "symbol": sym, "membership": membership,
             "regime": ctx.mkt.regime, "bull_score": round(ctx.mkt.bull_score, 1), "vix": round(ctx.vix, 1),
@@ -257,6 +267,16 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
             "macd_divergence": s.macd_divergence,
             # cadence of this run (daily | weekly)
             "cadence": cadence,
+            # structural S/R (report-only; null when levels lens disabled or no zone that side)
+            "nearest_support": round(z_sup.mid, 2) if z_sup else None,
+            "nearest_resistance": round(z_res.mid, 2) if z_res else None,
+            "sr_support_label": z_sup.label if z_sup else None,
+            "sr_support_methods": len(z_sup.methods) if z_sup else None,
+            "sr_resistance_label": z_res.label if z_res else None,
+            "sr_resistance_methods": len(z_res.methods) if z_res else None,
+            "sr_dist_support_pct": round(z_sup.mid / s.price - 1, 4) if z_sup and s.price else None,
+            "sr_dist_resistance_pct": round(z_res.mid / s.price - 1, 4) if z_res and s.price else None,
+            "sr_source": ctx.levels_source.get(sym),
         })
 
         prev = prior_states.get(sym)

@@ -3,7 +3,7 @@ from datetime import date, timedelta
 import polars as pl
 
 from quant import observations
-from quant.models import MacroState, MarketState, Signal
+from quant.models import MacroState, MarketState, Signal, Zone
 from quant.pipeline import AnalysisContext
 
 
@@ -31,7 +31,7 @@ def _signal(symbol, price, atr=2.0):
     )
 
 
-def _ctx(sym, closes, sig, daily_review):
+def _ctx(sym, closes, sig, daily_review, levels=None):
     ctx_kwargs = {
         "cfg": {
             "drift_band": 0.20,
@@ -49,6 +49,10 @@ def _ctx(sym, closes, sig, daily_review):
     }
     if "sector_state" in AnalysisContext.__dataclass_fields__:
         ctx_kwargs["sector_state"] = None
+    if "levels" in AnalysisContext.__dataclass_fields__:
+        ctx_kwargs["levels"] = levels or {}
+    if "levels_source" in AnalysisContext.__dataclass_fields__:
+        ctx_kwargs["levels_source"] = {s: "manual" for s in (levels or {})}
     return AnalysisContext(**ctx_kwargs)
 
 
@@ -89,3 +93,48 @@ def test_build_rows_flags_atr_move():
 
     assert outliers[0]["symbol"] == sym
     assert outliers[0]["flags"] == ["Abnormal ATR move (+2.0x ATR)"]
+
+
+_SR_COLS = ["nearest_support", "nearest_resistance", "sr_support_label", "sr_support_methods",
+            "sr_resistance_label", "sr_resistance_methods", "sr_dist_support_pct",
+            "sr_dist_resistance_pct"]
+
+
+def test_build_rows_sr_columns_null_when_levels_absent():
+    closes = _close_from_returns([0.0, 0.01, 0.0, 0.01, 0.0, 0.01])
+    sym = "NOSR"
+    ctx = _ctx(sym, closes, _signal(sym, closes[-1]),
+               {"price_move": {"lookback": 5}, "atr_move": {}})  # levels default {} → nulls
+    rows, _ = observations.build_rows(
+        ctx, cadence="daily", prior_states={}, git_sha=None, config_hash="test",
+        generated_at="2026-01-07 00:00:00 UTC",
+        ohlcv={sym: {"bar_date": "2026-01-06", "open": 0, "high": 0, "low": 0}},
+    )
+    for col in _SR_COLS + ["sr_source"]:
+        assert col in observations.SCHEMA
+        assert rows[0][col] is None
+
+
+def test_build_rows_sr_columns_populated_from_levels():
+    closes = _close_from_returns([0.0, 0.01, 0.0, 0.01, 0.0, 0.01])
+    sym = "HASSR"
+    price = closes[-1]
+    zones = [
+        Zone(low=price * 0.9, high=price * 0.92, score=1.0, label="strong",
+             kind="support", touches=1, methods=["fib", "swing", "volume"]),
+        Zone(low=price * 1.08, high=price * 1.10, score=1.0, label="medium",
+             kind="resistance", touches=1, methods=["fib", "round"]),
+    ]
+    ctx = _ctx(sym, closes, _signal(sym, price),
+               {"price_move": {"lookback": 5}, "atr_move": {}}, levels={sym: zones})
+    rows, _ = observations.build_rows(
+        ctx, cadence="daily", prior_states={}, git_sha=None, config_hash="test",
+        generated_at="2026-01-07 00:00:00 UTC",
+        ohlcv={sym: {"bar_date": "2026-01-06", "open": 0, "high": 0, "low": 0}},
+    )
+    row = rows[0]
+    assert row["sr_support_label"] == "strong" and row["sr_support_methods"] == 3
+    assert row["sr_resistance_label"] == "medium" and row["sr_resistance_methods"] == 2
+    assert row["nearest_support"] < price < row["nearest_resistance"]
+    assert row["sr_dist_support_pct"] < 0 < row["sr_dist_resistance_pct"]
+    assert row["sr_source"] == "manual"   # fixture tags curated symbols manual
