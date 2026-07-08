@@ -74,6 +74,19 @@ def main() -> None:
     print(f"  {len(outliers)} outlier(s) flagged")
     print("  " + observations.record(STORE, as_of_bar, rows, cadence="daily"))
 
+    # Also capture the raw option chains (OI/IV per strike) for the whole universe — yfinance only
+    # serves the CURRENT chain, so an uncaptured close is lost forever. Skip a stale (mid-session)
+    # bar, and guard so a chain-fetch hiccup never aborts the run: the panel above is the asset.
+    if not stale:
+        try:
+            import sys
+            sys.path.insert(0, os.path.join(ROOT, "scripts"))
+            import snapshot_options
+            ok, total = snapshot_options.snapshot(sorted(ctx.signals), verbose=False)
+            print(f"  option chains captured: {ok}/{total}")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠ option-chain snapshot failed ({e}) — panel still written")
+
 
 if __name__ == "__main__":
     main()

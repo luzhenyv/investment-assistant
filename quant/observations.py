@@ -90,6 +90,8 @@ SCHEMA: dict[str, pl.DataType] = {
     "sr_dist_support_pct": _F, "sr_dist_resistance_pct": _F,
     # provenance of the S/R zones: manual (curated levels.yaml) | manual-stale | auto | null(none)
     "sr_source": _S,
+    # expiry the positioning row references (appended; un-backfillable metadata for the walls/GEX above)
+    "expiry": _S, "dte": _I,
 }
 
 
@@ -277,6 +279,8 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
             "sr_dist_support_pct": round(z_sup.mid / s.price - 1, 4) if z_sup and s.price else None,
             "sr_dist_resistance_pct": round(z_res.mid / s.price - 1, 4) if z_res and s.price else None,
             "sr_source": ctx.levels_source.get(sym),
+            # expiry the positioning above references (un-backfillable metadata)
+            "expiry": p.expiry if p else None, "dte": p.dte if p else None,
         })
 
         prev = prior_states.get(sym)

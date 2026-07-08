@@ -128,18 +128,31 @@ def _snapshot(sym: str, today: dt.date, ts: str) -> str:
     return f"ok — {df.height} rows, {used} expiries, spot {spot:.2f}"
 
 
-def main() -> None:
-    tickers = [a.upper() for a in sys.argv[1:]] or _universe()
+def snapshot(symbols: list[str], *, verbose: bool = True) -> tuple[int, int]:
+    """Capture raw option chains for `symbols` into data/options_snapshots/<SYM>/<date>.parquet.
+
+    Idempotent per (symbol, date) — a symbol already captured today is skipped. Returns
+    (captured, total). Importable so daily_review.py can fold chain capture into its post-close run.
+    """
+    tickers = [s.upper() for s in symbols]
     today = clock.today()
     ts = clock.now().isoformat(timespec="seconds")
-    print(f"Snapshotting {len(tickers)} symbols for {today.isoformat()} -> {STORE}")
+    if verbose:
+        print(f"Snapshotting {len(tickers)} symbols for {today.isoformat()} -> {STORE}")
     ok = 0
     for sym in tickers:
         status = _snapshot(sym, today, ts)
         if status.startswith("ok"):
             ok += 1
-        print(f"  {sym:6} {status}")
-    print(f"Done: {ok}/{len(tickers)} captured.")
+        if verbose:
+            print(f"  {sym:6} {status}")
+    return ok, len(tickers)
+
+
+def main() -> None:
+    tickers = [a.upper() for a in sys.argv[1:]] or _universe()
+    ok, total = snapshot(tickers)
+    print(f"Done: {ok}/{total} captured.")
 
 
 if __name__ == "__main__":
