@@ -19,3 +19,10 @@ data/options_snapshots
 # derived). Back it up locally — never push it to this remote.
 data/daily_observations/
 .DS_Store
+
+# Reference books / papers (large binaries, not source)
+2412.20138v7.pdf
+Quantitative Trading - How to Build Your Own Algorithmic Trading Business (Ernest P Chan).pdf
+
+# One-off exploration scratch script
+mu_overnight_backtest.py
