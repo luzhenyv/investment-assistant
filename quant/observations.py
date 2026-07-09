@@ -92,6 +92,11 @@ SCHEMA: dict[str, pl.DataType] = {
     "sr_source": _S,
     # expiry the positioning row references (appended; un-backfillable metadata for the walls/GEX above)
     "expiry": _S, "dte": _I,
+    # social sentiment (report-only retail-sentiment lens — see quant/sentiment.py; null when disabled
+    # or no data). Un-backfillable: StockTwits serves only "most recent N", so it must be captured
+    # daily. st_total is the chatter-volume proxy; sent_vol_z its spike vs this store's st_total history.
+    "st_bull": _I, "st_bear": _I, "st_total": _I, "reddit_posts": _I,
+    "st_net": _F, "sent_vol_z": _F, "sentiment_label": _S,
 }
 
 
@@ -198,6 +203,7 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
         s = ctx.signals[sym]
         f = ctx.fundamentals.get(sym)
         p = ctx.positioning.get(sym)
+        sv = ctx.sentiment.get(sym)
         rv = ctx.roleviews.get(sym)
         rec = rec_by_sym.get(sym)
         h = ctx.holdings.get(sym)
@@ -281,6 +287,11 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
             "sr_source": ctx.levels_source.get(sym),
             # expiry the positioning above references (un-backfillable metadata)
             "expiry": p.expiry if p else None, "dte": p.dte if p else None,
+            # social sentiment (report-only; null when the lens is off or the name has no social data)
+            "st_bull": sv.st_bull if sv else None, "st_bear": sv.st_bear if sv else None,
+            "st_total": sv.st_total if sv else None, "reddit_posts": sv.reddit_posts if sv else None,
+            "st_net": sv.st_net if sv else None, "sent_vol_z": sv.sent_vol_z if sv else None,
+            "sentiment_label": sv.sentiment_label if sv else None,
         })
 
         prev = prior_states.get(sym)
@@ -361,6 +372,29 @@ def atm_iv_history(store_dir: str, cadence: str = "daily") -> dict[str, list[flo
     ).filter(pl.col("cadence") == cadence).sort("bar_date")
     return {
         sym: [v for v in df.filter(pl.col("symbol") == sym)["atm_iv"].to_list() if v is not None]
+        for sym in df["symbol"].unique().to_list()
+    }
+
+
+def sentiment_volume_history(store_dir: str, cadence: str = "daily") -> dict[str, list[int]]:
+    """Per-symbol StockTwits message-count (st_total) series across accumulated files of one
+    `cadence`, in chronological (bar_date) order — feeds the chatter z-score in quant/sentiment.py.
+    Same glob + fallback-read + cadence-filter shape as atm_iv_history. Files predating the st_total
+    column just don't contribute; empty dict when the store has no usable history."""
+    frames = []
+    for p in sorted(glob.glob(os.path.join(store_dir, "*.parquet"))):
+        try:
+            df = pl.read_parquet(p, columns=["symbol", "st_total", "bar_date", "cadence"])
+        except Exception:  # noqa: BLE001 — pre-sentiment or incompatible file
+            continue
+        frames.append(df)
+    if not frames:
+        return {}
+    df = pl.concat(frames, how="vertical_relaxed").with_columns(
+        pl.col("cadence").fill_null("daily")
+    ).filter(pl.col("cadence") == cadence).sort("bar_date")
+    return {
+        sym: [int(v) for v in df.filter(pl.col("symbol") == sym)["st_total"].to_list() if v is not None]
         for sym in df["symbol"].unique().to_list()
     }
 

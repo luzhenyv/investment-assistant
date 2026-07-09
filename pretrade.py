@@ -14,7 +14,7 @@ import sys
 
 from quant import (
     clock, decision, observations, option_flow, pipeline, pretrade, pretrade_report, profiles,
-    providers, roles, scoring, valuation,
+    providers, roles, scoring, sentiment, valuation,
 )
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -65,6 +65,8 @@ def main() -> None:
 
     opt_enabled = cfg.get("option_positioning", {}).get("enabled", False)
     iv_hist = observations.atm_iv_history(STORE) if opt_enabled else {}
+    sent_enabled = cfg.get("sentiment", {}).get("enabled", False)
+    sent_vol_hist = observations.sentiment_volume_history(STORE) if sent_enabled else {}
 
     now = clock.now()
     generated_at = clock.timestamp(now)
@@ -79,6 +81,8 @@ def main() -> None:
         positioning = (option_flow.analyze(sym, sig.price, history[sym], cfg, iv_hist=iv_hist.get(sym))
                        if opt_enabled else None)
         roleview = roles.build(sym, sig, fund, cfg) if cfg.get("role_rules") else None
+        sentiment_view = (sentiment.analyze(sym, providers.fetch_sentiment_raw(sym, cfg), cfg,
+                                            vol_hist=sent_vol_hist.get(sym)) if sent_enabled else None)
         live = providers.fetch_quote(sym)
         if live is None:
             print(f"  ! {sym}: live quote unavailable — falling back to last daily close")
@@ -100,7 +104,7 @@ def main() -> None:
         }
         briefs.append(pretrade.build(
             sym, cfg, sig, live, positioning, roleview, fund, earnings, market_ctx,
-            portfolio_ctx, position, as_of=generated_at,
+            portfolio_ctx, position, as_of=generated_at, sentiment_view=sentiment_view,
         ))
 
     if not briefs:

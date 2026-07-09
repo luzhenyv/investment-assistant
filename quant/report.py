@@ -7,7 +7,7 @@ from dataclasses import asdict
 from quant import levels as levels_mod
 from quant.models import (
     Fundamentals, MacroState, MarketState, OptionAnalysis, OptionPositioning, Recommendation,
-    RoleView, SectorState, Zone,
+    RoleView, SectorState, SentimentView, Zone,
 )
 
 
@@ -250,6 +250,31 @@ def _positioning_tables(positioning: dict[str, OptionPositioning]) -> list[str]:
     return out
 
 
+def _sentiment_tables(sentiment: dict[str, SentimentView]) -> list[str]:
+    """One row per symbol: the retail-sentiment label, net bull/bear, message + Reddit volume, and
+    the chatter z-score; contrarian / low-sample notes below."""
+    rows, notes = [], []
+    for sym in sorted(sentiment):
+        s = sentiment[sym]
+        net = f"{s.st_net:+.2f}" if s.st_net is not None else "—"
+        z = f"{s.sent_vol_z:+.1f}σ" if s.sent_vol_z is not None else "—"
+        rows.append([s.symbol, s.sentiment_label, net, f"{s.st_bull}/{s.st_bear}",
+                     s.st_unlabeled, s.st_total, z, s.reddit_posts])
+        if s.notes:
+            notes.append(f"- **{s.symbol}** — " + " · ".join(s.notes))
+    out = _table(
+        ["Symbol", "Label", "Net", "Bull/Bear", "Unlbl", "Msgs", "Chatter z", "Reddit"],
+        rows, ["l", "l", "r", "r", "r", "r", "r", "r"],
+    )
+    if notes:
+        out += notes + [""]
+    out.append("_Report-only retail sentiment (StockTwits Bull/Bear labels + Reddit post volume; does "
+               "not feed scoring/decision). Net = (bull−bear)/labelled ∈ [−1,1]; Chatter z = message "
+               "count vs this store's history. The sentiment-review skill adds the catalyst/divergence read._")
+    out.append("")
+    return out
+
+
 def _zone_str(z: Zone | None) -> str:
     """A zone as a price band + strength tag: hand-curated → `$118–$121 (strong·curated)`,
     auto-detected → `$118–$121 (strong·3m·flip)` (distinct-method confluence count)."""
@@ -303,12 +328,14 @@ def render_markdown(
     sector: SectorState | None = None,
     levels: dict[str, list[Zone]] | None = None,
     levels_source: dict[str, str] | None = None,
+    sentiment: dict[str, SentimentView] | None = None,
 ) -> str:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
     roleviews = roleviews or {}
     levels = levels or {}
     levels_source = levels_source or {}
+    sentiment = sentiment or {}
     out: list[str] = [f"# Weekly Investment Review — {generated_at}", ""]
 
     out.append(f"## Market: **{market.regime}**  (bull score {market.bull_score:.0f}/100)")
@@ -377,6 +404,11 @@ def render_markdown(
     if levels:
         out += _levels_block(levels, levels_source)
 
+    if sentiment:
+        out.append("## Social sentiment (retail)")
+        out.append("")
+        out += _sentiment_tables(sentiment)
+
     out.append("## Watchlist candidates")
     out.append("")
     if watchlist_recs:
@@ -422,15 +454,17 @@ def generate(
     sector: SectorState | None = None,
     levels: dict[str, list[Zone]] | None = None,
     levels_source: dict[str, str] | None = None,
+    sentiment: dict[str, SentimentView] | None = None,
 ) -> None:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
     roleviews = roleviews or {}
     levels = levels or {}
     levels_source = levels_source or {}
+    sentiment = sentiment or {}
     md = render_markdown(
         generated_at, market, holding_recs, watchlist_recs, option_analyses, summary,
-        fundamentals, positioning, roleviews, macro, sector, levels, levels_source,
+        fundamentals, positioning, roleviews, macro, sector, levels, levels_source, sentiment,
     )
     with open(md_path, "w") as f:
         f.write(md)
@@ -449,6 +483,7 @@ def generate(
         "roles": {sym: asdict(rv) for sym, rv in roleviews.items()},
         "levels": {sym: [asdict(z) for z in zs] for sym, zs in levels.items()},
         "levels_source": levels_source,
+        "sentiment": {sym: asdict(v) for sym, v in sentiment.items()},
     }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)

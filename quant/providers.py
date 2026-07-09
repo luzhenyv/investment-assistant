@@ -6,10 +6,15 @@ downstream is Polars. Canonical frame schema: date (Date) + OHLCV columns."""
 from __future__ import annotations
 
 import datetime as dt
+import html
 import json
 import os
+import re
 import time
+import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
+from urllib.parse import urlencode
 
 import polars as pl
 import yfinance as yf
@@ -218,6 +223,146 @@ def fetch_macro(cfg: dict) -> dict[str, dict]:
         _MACRO_CACHE.parent.mkdir(parents=True, exist_ok=True)
         _MACRO_CACHE.write_text(json.dumps(cached, indent=2, sort_keys=True))
     return out
+
+
+# --- Social sentiment (StockTwits + Reddit) ------------------------------------------- #
+# Un-backfillable retail-sentiment feeds (see quant/sentiment.py). Both free / no-auth. StockTwits
+# carries a machine-readable Bullish/Bearish label per message (a clean numeric signal); Reddit's
+# public Atom/RSS search gives post VOLUME (the JSON endpoint is WAF-403 for non-OAuth clients, so
+# RSS carries no scores). Report-only — the data is archived and never feeds scoring/decision.
+_STOCKTWITS_URL = "https://api.stocktwits.com/api/2/streams/symbol/{sym}.json"
+_REDDIT_RSS_URL = "https://www.reddit.com/r/{sub}/search.rss?{qs}"
+# Reddit blocks generic UAs (bare Mozilla/curl); a descriptive, identified token is served on RSS.
+_SOCIAL_UA = "investment-assistant/0.1 (sentiment lens)"
+_DEFAULT_SUBREDDITS = ("wallstreetbets", "stocks", "investing")
+_SENTIMENT_CACHE_DIR = cache.CACHE_DIR / "sentiment"
+_ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+
+
+def fetch_stocktwits(symbol: str, limit: int = 30, timeout: float = 10.0) -> list[dict]:
+    """Recent StockTwits messages for `symbol` as structured records (not a prompt string). Each:
+    {created_at, user, sentiment: 'Bullish'|'Bearish'|None, body}. No API key needed. Returns [] on
+    any failure. NB: the stream is 'most recent N', NOT date-bounded, so it must be captured daily to
+    build a series — it cannot be backfilled."""
+    url = _STOCKTWITS_URL.format(sym=symbol.upper())
+    req = urllib.request.Request(url, headers={"User-Agent": _SOCIAL_UA, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+    except Exception:  # noqa: BLE001 — network/parse failures are expected; caller degrades to []
+        return []
+    messages = data.get("messages", []) if isinstance(data, dict) else []
+    out = []
+    for m in messages[:limit]:
+        entities = m.get("entities") or {}
+        sobj = entities.get("sentiment") or {}
+        sentiment = sobj.get("basic") if isinstance(sobj, dict) else None
+        body = (m.get("body") or "").replace("\n", " ").strip()
+        out.append({
+            "created_at": m.get("created_at", ""),
+            "user": (m.get("user") or {}).get("username", "?"),
+            "sentiment": sentiment if sentiment in ("Bullish", "Bearish") else None,
+            "body": body[:280],
+        })
+    return out
+
+
+def _strip_reddit_html(content: str) -> str:
+    """Reduce the HTML body Reddit embeds in an Atom entry to plain text (selftext lives between the
+    SC_OFF / SC_ON markers)."""
+    if not content:
+        return ""
+    if "<!-- SC_OFF -->" in content and "<!-- SC_ON -->" in content:
+        content = content.split("<!-- SC_OFF -->")[1].split("<!-- SC_ON -->")[0]
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", content)).split())
+
+
+def _fetch_reddit_sub(symbol: str, sub: str, limit: int, timeout: float, _retry: bool = True) -> list[dict]:
+    """One subreddit via the Atom/RSS search feed (last-week, newest-first). Backs off once on a 429
+    honouring Retry-After. Returns records {title, created_utc, selftext, sub}; [] on failure."""
+    qs = urlencode({"q": symbol, "restrict_sr": "on", "sort": "new", "t": "week", "limit": limit})
+    req = urllib.request.Request(_REDDIT_RSS_URL.format(sub=sub, qs=qs), headers={"User-Agent": _SOCIAL_UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            root = ET.fromstring(resp.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 429 and _retry:
+            try:
+                wait = min(float(exc.headers.get("Retry-After") or 5.0), 30.0)
+            except (ValueError, TypeError, AttributeError):
+                wait = 5.0
+            time.sleep(wait)
+            return _fetch_reddit_sub(symbol, sub, limit, timeout, _retry=False)
+        return []
+    except Exception:  # noqa: BLE001 — network/parse failures are expected; caller degrades to []
+        return []
+    posts = []
+    for entry in root.findall("atom:entry", _ATOM_NS)[:limit]:
+        title_el = entry.find("atom:title", _ATOM_NS)
+        pub_el = entry.find("atom:published", _ATOM_NS)
+        content_el = entry.find("atom:content", _ATOM_NS)
+        posts.append({
+            "title": (title_el.text if title_el is not None else "") or "",
+            "created_utc": (pub_el.text if pub_el is not None else "") or "",
+            "selftext": _strip_reddit_html(content_el.text if content_el is not None else "")[:240],
+            "sub": sub,
+        })
+    return posts
+
+
+def fetch_reddit(symbol: str, subreddits=_DEFAULT_SUBREDDITS, limit_per_sub: int = 5,
+                 timeout: float = 10.0, pacing: float = 1.0) -> list[dict]:
+    """Recent Reddit posts mentioning `symbol` across finance subreddits as structured records
+    {title, created_utc, selftext, sub}. RSS carries no score/comment counts, so post VOLUME is the
+    signal. Paces requests `pacing`s apart to stay under Reddit's per-IP limit. Returns [] on failure."""
+    posts = []
+    for i, sub in enumerate(subreddits):
+        if i > 0 and pacing:
+            time.sleep(pacing)
+        posts.extend(_fetch_reddit_sub(symbol, sub, limit_per_sub, timeout))
+    return posts
+
+
+def _read_sentiment_cache(symbol: str) -> dict:
+    p = _SENTIMENT_CACHE_DIR / f"{symbol.upper()}.json"
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def fetch_sentiment_raw(symbol: str, cfg: dict) -> dict | None:
+    """Structured raw social sentiment for `symbol`: {"stocktwits": [...], "reddit": [...]}. Gated on
+    cfg["sentiment"]["enabled"] (returns None when disabled). Backed by a daily per-symbol cache at
+    data/cache/sentiment/<SYM>.json keyed on a "fetched" == today field, so the pipeline lens and the
+    raw-snapshot step share ONE fetch (Reddit's rate limit is hit once, and the derived metrics match
+    the archived raw). On a failed fetch the last cached copy is served. Report-only, un-backfillable."""
+    sc = cfg.get("sentiment", {})
+    if not sc.get("enabled", False):
+        return None
+    sym = symbol.upper()
+    today = clock.today().isoformat()
+    cached = _read_sentiment_cache(sym)
+    if cached.get("fetched") == today:
+        return {"stocktwits": cached.get("stocktwits", []), "reddit": cached.get("reddit", [])}
+    st_cfg = sc.get("stocktwits", {})
+    rd_cfg = sc.get("reddit", {})
+    stocktwits = fetch_stocktwits(sym, limit=st_cfg.get("limit", 30)) if st_cfg.get("enabled", True) else []
+    reddit = (fetch_reddit(sym, subreddits=tuple(rd_cfg.get("subreddits", _DEFAULT_SUBREDDITS)),
+                           limit_per_sub=rd_cfg.get("limit_per_sub", 5),
+                           timeout=rd_cfg.get("timeout", 10.0), pacing=rd_cfg.get("pacing", 1.0))
+              if rd_cfg.get("enabled", True) else [])
+    # Both empty likely means a transient outage — serve the last cached copy rather than poisoning
+    # today's archive with nothing (but don't stamp it as today's capture).
+    if not stocktwits and not reddit and (cached.get("stocktwits") or cached.get("reddit")):
+        return {"stocktwits": cached.get("stocktwits", []), "reddit": cached.get("reddit", [])}
+    payload = {"fetched": today, "captured_at": clock.timestamp(),
+               "stocktwits": stocktwits, "reddit": reddit}
+    _SENTIMENT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    (_SENTIMENT_CACHE_DIR / f"{sym}.json").write_text(json.dumps(payload, indent=2))
+    return {"stocktwits": stocktwits, "reddit": reddit}
 
 
 # --- Options -------------------------------------------------------------------------- #

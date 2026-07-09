@@ -297,3 +297,28 @@ intent_strategy_map:
   "Increase Exposure": ["Bull Call Spread"]
   "Close":             ["Sell shares"]
   "Hold":              []
+
+# Social sentiment (quant/sentiment.py) from StockTwits + Reddit. Report-only context parallel to the
+# macro/sector lenses — does NOT feed scoring/decision/backtest. Both feeds are free / no-auth.
+# StockTwits gives machine-readable Bull/Bear labels (a net + chatter-volume signal); Reddit's RSS
+# search adds post VOLUME. UN-BACKFILLABLE (StockTwits serves only "most recent N"), so it's captured
+# daily into the observation panel + raw snapshots (data/sentiment_snapshots/). The sentiment-review
+# skill adds the catalyst/divergence read on top.
+sentiment:
+  enabled: true
+  stocktwits:
+    enabled: true
+    limit: 30              # most-recent messages sampled per symbol per day
+  reddit:
+    enabled: true
+    subreddits: [wallstreetbets, stocks, investing]
+    limit_per_sub: 5       # posts per subreddit (RSS 7-day window, newest-first)
+    pacing: 1.0            # seconds between subreddit requests (Reddit per-IP rate limit)
+    timeout: 10.0
+  thresholds:              # override quant/sentiment.DEFAULTS
+    bull_band: 0.50        # st_net >= this = Bullish (<= -this = Bearish)
+    mild_band: 0.20        # |st_net| >= this (but < bull_band) = Mildly Bull/Bear
+    low_sample: 10         # fewer labelled msgs than this => low-confidence note
+    bull_extreme: 0.85     # bull share of labelled msgs >= this => contrarian over-extension flag
+    vol_z_min_days: 20     # min accumulated daily st_total obs before the chatter z-score shows
+    vol_z_spike: 2.0       # |chatter z| at/above this => chatter-spike note

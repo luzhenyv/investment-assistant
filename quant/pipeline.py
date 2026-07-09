@@ -25,6 +25,7 @@ from quant import (
 )
 from quant import sectors as sector_lens  # aliased: `sectors` is a local var below (symbol→GICS map)
 from quant import levels as levels_mod  # aliased: `levels` is the lens dict on the context below
+from quant import sentiment as sentiment_lens  # aliased: `sentiment` is the lens dict on the context below
 from quant import manual_levels
 
 if TYPE_CHECKING:
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 
     from quant.models import (
         Fundamentals, Holding, MacroState, MarketState, OptionAnalysis, OptionPositioning,
-        OptionStrategy, Recommendation, RoleView, SectorState, Signal, Zone,
+        OptionStrategy, Recommendation, RoleView, SectorState, SentimentView, Signal, Zone,
     )
 
 
@@ -68,6 +69,7 @@ class AnalysisContext:
     option_analyses: list[OptionAnalysis]
     positioning: dict[str, OptionPositioning]   # breadth-controlled
     roleviews: dict[str, RoleView]              # breadth-controlled
+    sentiment: dict[str, SentimentView]         # report-only social sentiment, breadth-controlled (empty when disabled)
     summary: dict
 
 
@@ -246,6 +248,25 @@ def run(
                 positioning[sym] = p
         print(f"  option positioning: {len(positioning)}/{len(pos_syms)} chains analysed")
 
+    # Social sentiment (report-only, never feeds scoring/decision). Same breadth as positioning:
+    # "full" covers every name (daily → the un-backfillable DB); "actionable" only the recs (weekly).
+    # One cached fetch per symbol/day is shared with the raw-snapshot step (see providers). vol_hist
+    # (prior daily st_total from the store) enables the chatter z-score.
+    sentiment = {}
+    if cfg.get("sentiment", {}).get("enabled", False):
+        vol_hist = observations.sentiment_volume_history(iv_hist_store) if iv_hist_store else {}
+        sent_syms = sorted(signals) if breadth == "full" else sorted(
+            {r.symbol for r in holding_recs} | {r.symbol for r in watchlist_recs}
+        )
+        for sym in sent_syms:
+            if sym not in signals:
+                continue
+            sv = sentiment_lens.analyze(sym, providers.fetch_sentiment_raw(sym, cfg), cfg,
+                                        vol_hist=vol_hist.get(sym))
+            if sv is not None:
+                sentiment[sym] = sv
+        print(f"  social sentiment: {len(sentiment)}/{len(sent_syms)} names with data")
+
     # Horizon roles (cheap, no I/O), same breadth as positioning.
     roleviews = {}
     if cfg.get("role_rules"):
@@ -299,5 +320,5 @@ def run(
         total_value=total_value, weights=weights, cash_state=cash_state, cash_low=cash_low,
         cash_frac=cash_frac, deployable=deployable, holding_recs=holding_recs,
         watchlist_recs=watchlist_recs, option_analyses=option_analyses,
-        positioning=positioning, roleviews=roleviews, summary=summary,
+        positioning=positioning, roleviews=roleviews, sentiment=sentiment, summary=summary,
     )

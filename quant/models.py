@@ -161,6 +161,24 @@ class OptionPositioning:
 
 
 @dataclass
+class SentimentView:
+    """Retail social-sentiment snapshot for one symbol (see quant/sentiment.py). Deterministic
+    metrics computed in code from StockTwits' machine-readable Bullish/Bearish labels + Reddit post
+    volume. Report-only / un-backfillable context — never feeds scoring/decision/backtest; the
+    sentiment-review skill adds the cross-source/divergence/catalyst judgment on top."""
+    symbol: str
+    st_bull: int                  # StockTwits messages tagged Bullish
+    st_bear: int                  # StockTwits messages tagged Bearish
+    st_unlabeled: int             # StockTwits messages with no sentiment tag
+    st_total: int                 # total StockTwits messages sampled (the chatter-volume proxy)
+    st_net: float | None          # (bull - bear) / (bull + bear) ∈ [-1, 1]; None when no labelled msgs
+    reddit_posts: int             # Reddit posts mentioning the symbol this week (attention proxy)
+    sent_vol_z: float | None      # z-score of st_total vs the daily store's history (chatter spike)
+    sentiment_label: str          # Bullish | Mildly Bullish | Neutral | Mixed | Mildly Bearish | Bearish
+    notes: list[str] = field(default_factory=list)  # low-sample / contrarian-extreme / divergence reads
+
+
+@dataclass
 class RoleView:
     """Horizon role for one symbol + its take-profit / stop-loss discipline (see quant/roles.py).
     Report-only hint. `role` is the hand-set config role when present, else the suggested one —
@@ -193,6 +211,7 @@ class PreTradeBrief:
     today_move_pct: float | None = None     # live.last vs prev_close
     levels: dict = field(default_factory=dict)    # distances from LIVE price to walls/max-pain/TP/SL + live R:R
     roles: dict = field(default_factory=dict)     # role / horizon / tp_price / sl_price
+    sentiment: dict = field(default_factory=dict) # retail sentiment: label / net / bull-bear / msg volume / chatter z
     earnings: dict | None = None            # fetch_earnings_date() + within_gate / expected_move_pct / sizing note
     market_ctx: dict = field(default_factory=dict)  # SPY/QQQ day move + VIX + idiosyncratic-vs-macro read
     portfolio: dict = field(default_factory=dict)   # book context: cash / total_value / cash_frac / cash_status / deployable

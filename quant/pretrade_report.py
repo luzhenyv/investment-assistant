@@ -88,6 +88,14 @@ def _brief_md(b: PreTradeBrief) -> list[str]:
     pos_line = _position_line(b.position)
     if pos_line:
         out.append(pos_line)
+    if b.sentiment:
+        s = b.sentiment
+        net = f"{s['net']:+.2f}" if s.get("net") is not None else "—"
+        z = f" · chatter {s['sent_vol_z']:+.1f}σ" if s.get("sent_vol_z") is not None else ""
+        out.append(
+            f"**Sentiment**: {s.get('label')} · net {net} · {s.get('st_bull')}/{s.get('st_bear')} "
+            f"bull/bear of {s.get('st_total')} msgs · {s.get('reddit_posts')} reddit{z}"
+        )
     out.append("")
 
     # Re-anchored levels (distances measured from the LIVE price)

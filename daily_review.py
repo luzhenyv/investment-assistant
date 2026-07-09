@@ -64,11 +64,13 @@ def main() -> None:
     report_positioning = {k: v for k, v in ctx.positioning.items() if k in actionable}
     report_levels = {k: v for k, v in ctx.levels.items() if k in actionable}
     report_levels_source = {k: v for k, v in ctx.levels_source.items() if k in actionable}
+    report_sentiment = {k: v for k, v in ctx.sentiment.items() if k in actionable}
     daily_report.generate(
         md_path, json_path, generated_at, ctx.mkt, ctx.holding_recs, ctx.watchlist_recs,
         ctx.option_analyses, ctx.summary, ctx.fundamentals, report_positioning, ctx.roleviews,
         outliers, ohlcv=ohlcv, as_of_bar=as_of_bar, stale=stale, macro=ctx.macro_state,
         sector=ctx.sector_state, levels=report_levels, levels_source=report_levels_source,
+        sentiment=report_sentiment,
     )
     print(f"Report written to {md_path}")
     print(f"  {len(outliers)} outlier(s) flagged")
@@ -86,6 +88,17 @@ def main() -> None:
             print(f"  option chains captured: {ok}/{total}")
         except Exception as e:  # noqa: BLE001
             print(f"  ⚠ option-chain snapshot failed ({e}) — panel still written")
+
+        # Raw social-sentiment archive (un-backfillable; served from the same daily cache the lens
+        # populated above, so no double fetch). Guarded so a hiccup never aborts the run.
+        try:
+            import sys
+            sys.path.insert(0, os.path.join(ROOT, "scripts"))
+            import snapshot_sentiment
+            ok, total = snapshot_sentiment.snapshot(sorted(ctx.signals), verbose=False)
+            print(f"  sentiment snapshots captured: {ok}/{total}")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠ sentiment snapshot failed ({e}) — panel still written")
 
 
 if __name__ == "__main__":
