@@ -10,7 +10,9 @@ skill (web search); this stays deterministic. Earnings within the gate is a SOFT
 guidance (don't deploy full size into a binary print), never a hard block."""
 from __future__ import annotations
 
-from quant.models import Fundamentals, OptionPositioning, PreTradeBrief, RoleView, SentimentView, Signal
+from quant.models import (
+    Fundamentals, NewsView, OptionPositioning, PreTradeBrief, RoleView, SentimentView, Signal,
+)
 
 
 def _dist(level: float | None, last: float) -> float | None:
@@ -58,6 +60,7 @@ def build(
     *,
     as_of: str,
     sentiment_view: SentimentView | None = None,
+    news_view: NewsView | None = None,
 ) -> PreTradeBrief:
     """Assemble the PreTradeBrief: live quote + re-anchored levels + earnings gate + market read.
 
@@ -161,6 +164,18 @@ def build(
         for n in sentiment_view.notes:
             notes.append(f"sentiment: {n}")
 
+    news = {}
+    if news_view is not None:
+        top = news_view.headlines[0] if news_view.headlines else None
+        news = {
+            "news_count": news_view.news_count, "latest_age_days": news_view.latest_age_days,
+            "news_vol_z": news_view.news_vol_z,
+            "top_headline": top.get("title") if top else None,
+            "top_publisher": top.get("publisher") if top else None,
+        }
+        for n in news_view.notes:
+            notes.append(f"news: {n}")
+
     return PreTradeBrief(
         symbol=symbol,
         as_of=as_of,
@@ -178,6 +193,7 @@ def build(
             "note": roleview.note,
         } if roleview is not None else {}),
         sentiment=sentiment,
+        news=news,
         earnings=earn,
         market_ctx=market,
         portfolio=dict(portfolio_ctx),

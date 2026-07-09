@@ -12,8 +12,8 @@ from dataclasses import asdict
 
 from quant import report
 from quant.models import (
-    Fundamentals, MacroState, MarketState, OptionAnalysis, OptionPositioning, Recommendation,
-    RoleView, SectorState, SentimentView, Zone,
+    Fundamentals, GlobalNewsState, MacroState, MarketState, NewsView, OptionAnalysis,
+    OptionPositioning, PredictionMarketState, Recommendation, RoleView, SectorState, SentimentView, Zone,
 )
 
 
@@ -92,6 +92,9 @@ def generate(
     levels: dict[str, list[Zone]] | None = None,
     levels_source: dict[str, str] | None = None,
     sentiment: dict[str, SentimentView] | None = None,
+    news: dict[str, NewsView] | None = None,
+    global_news: GlobalNewsState | None = None,
+    prediction_markets: PredictionMarketState | None = None,
 ) -> None:
     """Write the daily `.md` (outliers section + the weekly review body) and the `.json`."""
     fundamentals = fundamentals or {}
@@ -102,10 +105,12 @@ def generate(
     levels = levels or {}
     levels_source = levels_source or {}
     sentiment = sentiment or {}
+    news = news or {}
 
     body = report.render_markdown(
         generated_at, market, holding_recs, watchlist_recs, option_analyses, summary,
         fundamentals, positioning, roleviews, macro, sector, levels, levels_source, sentiment,
+        news, global_news, prediction_markets,
     ).split("\n")[2:]  # drop the weekly H1 title + its blank line; we set our own header
 
     lines = [f"# Daily Review — {generated_at}", ""]
@@ -142,6 +147,9 @@ def generate(
         "levels": {sym: [asdict(z) for z in zs] for sym, zs in levels.items()},
         "levels_source": levels_source,
         "sentiment": {sym: asdict(v) for sym, v in sentiment.items()},
+        "news": {sym: asdict(v) for sym, v in news.items()},
+        "global_news": asdict(global_news) if global_news is not None else None,
+        "prediction_markets": asdict(prediction_markets) if prediction_markets is not None else None,
     }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)

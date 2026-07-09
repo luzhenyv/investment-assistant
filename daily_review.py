@@ -65,12 +65,14 @@ def main() -> None:
     report_levels = {k: v for k, v in ctx.levels.items() if k in actionable}
     report_levels_source = {k: v for k, v in ctx.levels_source.items() if k in actionable}
     report_sentiment = {k: v for k, v in ctx.sentiment.items() if k in actionable}
+    report_news = {k: v for k, v in ctx.news.items() if k in actionable}
     daily_report.generate(
         md_path, json_path, generated_at, ctx.mkt, ctx.holding_recs, ctx.watchlist_recs,
         ctx.option_analyses, ctx.summary, ctx.fundamentals, report_positioning, ctx.roleviews,
         outliers, ohlcv=ohlcv, as_of_bar=as_of_bar, stale=stale, macro=ctx.macro_state,
         sector=ctx.sector_state, levels=report_levels, levels_source=report_levels_source,
-        sentiment=report_sentiment,
+        sentiment=report_sentiment, news=report_news, global_news=ctx.global_news,
+        prediction_markets=ctx.prediction_markets,
     )
     print(f"Report written to {md_path}")
     print(f"  {len(outliers)} outlier(s) flagged")
@@ -99,6 +101,25 @@ def main() -> None:
             print(f"  sentiment snapshots captured: {ok}/{total}")
         except Exception as e:  # noqa: BLE001
             print(f"  ⚠ sentiment snapshot failed ({e}) — panel still written")
+
+        # Raw news archive (per-ticker + global headlines) + prediction-market odds — un-backfillable,
+        # served from the same daily caches the lenses populated. Each guarded independently.
+        try:
+            import sys
+            sys.path.insert(0, os.path.join(ROOT, "scripts"))
+            import snapshot_news
+            ok, total = snapshot_news.snapshot(sorted(ctx.signals), verbose=False)
+            print(f"  news snapshots captured: {ok}/{total}")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠ news snapshot failed ({e}) — panel still written")
+        try:
+            import sys
+            sys.path.insert(0, os.path.join(ROOT, "scripts"))
+            import snapshot_prediction_markets
+            n, _ = snapshot_prediction_markets.snapshot(verbose=False)
+            print(f"  prediction-market rows captured: {n}")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠ prediction-market snapshot failed ({e}) — panel still written")
 
 
 if __name__ == "__main__":

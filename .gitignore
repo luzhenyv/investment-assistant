@@ -27,3 +27,5 @@ Quantitative Trading - How to Build Your Own Algorithmic Trading Business (Ernes
 # One-off exploration scratch script
 mu_overnight_backtest.py
 data/sentiment_snapshots/
+data/news_snapshots/
+data/prediction_markets/

@@ -322,3 +322,44 @@ sentiment:
     bull_extreme: 0.85     # bull share of labelled msgs >= this => contrarian over-extension flag
     vol_z_min_days: 20     # min accumulated daily st_total obs before the chatter z-score shows
     vol_z_spike: 2.0       # |chatter z| at/above this => chatter-spike note
+
+# Per-ticker + global news (quant/news.py) from free yfinance headlines. Report-only context parallel
+# to the macro/sentiment lenses — does NOT feed scoring/decision/backtest. No vendor sentiment score;
+# the code tracks coverage volume + freshness and the news-review skill judges the headlines. Un-
+# backfillable (yfinance serves only the current window), captured daily into the panel + raw snapshots.
+news:
+  enabled: true
+  per_ticker:
+    limit: 20              # headlines pulled per symbol per day
+  global:                  # macro/world-news block (yfinance Search over fixed queries)
+    enabled: true
+    limit: 10              # deduped headlines kept
+    report_top_n: 8        # headlines shown in the report block
+    queries:
+      - "Federal Reserve interest rates inflation"
+      - "S&P 500 earnings GDP economic outlook"
+      - "geopolitical risk trade war sanctions"
+      - "ECB Bank of England BOJ central bank policy"
+      - "oil commodities supply chain energy"
+  thresholds:              # override quant/news.DEFAULTS
+    top_n: 5               # headlines kept on the per-ticker view
+    stale_days: 5          # latest headline older than this => "quiet coverage" note
+    vol_z_min_days: 20     # min accumulated daily news_count obs before the coverage z-score shows
+    vol_z_spike: 2.0       # |coverage z| at/above this => coverage-spike note
+
+# Prediction markets (quant/prediction_markets.py) from Polymarket's keyless Gamma API. Report-only
+# forward-looking macro prior parallel to the FRED macro block — does NOT feed scoring/decision/backtest.
+# Crowd-implied event probabilities the FRED lens can't give; captured daily (odds are un-backfillable).
+prediction_markets:
+  enabled: true
+  topics:                  # searched on Polymarket; macro/rate/growth + AI events for this book
+    - "Fed rate cut 2026"
+    - "US recession 2026"
+    - "US inflation 2026"  # soft-landing / overheating / stagflation regime odds
+    - "AI 2026"            # AI-bubble-burst + best-model odds (thesis-relevant for this book)
+  limit: 8                 # top markets per topic (by volume) before the informative filter
+  thresholds:
+    backdrop_n: 4          # topics summarized in the one-line backdrop (one market each)
+    week_move_flag: 0.10   # |1-week probability move| at/above this => a "big move" note (10pp)
+    min_prob: 0.03         # drop near-0 uninformative buckets ("will 11 Fed cuts happen" ~0%)
+    max_prob: 0.97         # drop near-certain / already-decided markets

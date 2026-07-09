@@ -26,14 +26,17 @@ from quant import (
 from quant import sectors as sector_lens  # aliased: `sectors` is a local var below (symbol→GICS map)
 from quant import levels as levels_mod  # aliased: `levels` is the lens dict on the context below
 from quant import sentiment as sentiment_lens  # aliased: `sentiment` is the lens dict on the context below
+from quant import news as news_lens  # aliased: `news` is the lens dict on the context below
+from quant import prediction_markets as pm_lens  # aliased: `prediction_markets` is a local var below
 from quant import manual_levels
 
 if TYPE_CHECKING:
     import polars as pl
 
     from quant.models import (
-        Fundamentals, Holding, MacroState, MarketState, OptionAnalysis, OptionPositioning,
-        OptionStrategy, Recommendation, RoleView, SectorState, SentimentView, Signal, Zone,
+        Fundamentals, GlobalNewsState, Holding, MacroState, MarketState, NewsView, OptionAnalysis,
+        OptionPositioning, OptionStrategy, PredictionMarketState, Recommendation, RoleView,
+        SectorState, SentimentView, Signal, Zone,
     )
 
 
@@ -70,6 +73,9 @@ class AnalysisContext:
     positioning: dict[str, OptionPositioning]   # breadth-controlled
     roleviews: dict[str, RoleView]              # breadth-controlled
     sentiment: dict[str, SentimentView]         # report-only social sentiment, breadth-controlled (empty when disabled)
+    news: dict[str, NewsView]                   # report-only per-ticker news flow, breadth-controlled (empty when disabled)
+    global_news: GlobalNewsState | None         # report-only macro/world news backdrop (None when disabled)
+    prediction_markets: PredictionMarketState | None  # report-only Polymarket event odds (None when disabled)
     summary: dict
 
 
@@ -140,6 +146,11 @@ def run(
     qqq = scoring.build_signal("QQQ", history["QQQ"], cfg)
     mkt = market.detect_market(spy, qqq, vix)
     macro_state = macro.detect_macro(providers.fetch_macro(cfg), cfg)  # report-only context
+    # Market-wide macro/news context (report-only, computed once; gated inside the fetchers on config).
+    global_news = (news_lens.analyze_global(providers.fetch_global_news_cached(cfg), cfg)
+                   if cfg.get("news", {}).get("enabled", False) else None)
+    prediction_market_state = (pm_lens.analyze(providers.fetch_prediction_markets_cached(cfg), cfg)
+                               if cfg.get("prediction_markets", {}).get("enabled", False) else None)
     sector_signals = {s: scoring.build_signal(s, history[s], cfg) for s in etf_syms if s in history}
     sector_state = sector_lens.detect_rotation(sector_signals, spy, history, cfg) if sector_signals else None
 
@@ -267,6 +278,24 @@ def run(
                 sentiment[sym] = sv
         print(f"  social sentiment: {len(sentiment)}/{len(sent_syms)} names with data")
 
+    # Per-ticker news flow (report-only, never feeds scoring/decision). Same breadth as positioning;
+    # one cached fetch per symbol/day shared with the raw-snapshot step. vol_hist (prior daily
+    # news_count from the store) enables the coverage z-score.
+    news = {}
+    if cfg.get("news", {}).get("enabled", False):
+        news_vol_hist = observations.news_volume_history(iv_hist_store) if iv_hist_store else {}
+        news_syms = sorted(signals) if breadth == "full" else sorted(
+            {r.symbol for r in holding_recs} | {r.symbol for r in watchlist_recs}
+        )
+        for sym in news_syms:
+            if sym not in signals:
+                continue
+            nv = news_lens.analyze(sym, providers.fetch_news_raw(sym, cfg), cfg,
+                                   vol_hist=news_vol_hist.get(sym))
+            if nv is not None:
+                news[sym] = nv
+        print(f"  news flow: {len(news)}/{len(news_syms)} names with headlines")
+
     # Horizon roles (cheap, no I/O), same breadth as positioning.
     roleviews = {}
     if cfg.get("role_rules"):
@@ -320,5 +349,7 @@ def run(
         total_value=total_value, weights=weights, cash_state=cash_state, cash_low=cash_low,
         cash_frac=cash_frac, deployable=deployable, holding_recs=holding_recs,
         watchlist_recs=watchlist_recs, option_analyses=option_analyses,
-        positioning=positioning, roleviews=roleviews, sentiment=sentiment, summary=summary,
+        positioning=positioning, roleviews=roleviews, sentiment=sentiment,
+        news=news, global_news=global_news, prediction_markets=prediction_market_state,
+        summary=summary,
     )

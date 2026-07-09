@@ -96,6 +96,13 @@ def _brief_md(b: PreTradeBrief) -> list[str]:
             f"**Sentiment**: {s.get('label')} · net {net} · {s.get('st_bull')}/{s.get('st_bear')} "
             f"bull/bear of {s.get('st_total')} msgs · {s.get('reddit_posts')} reddit{z}"
         )
+    if b.news:
+        nw = b.news
+        age = f"{nw['latest_age_days']:.0f}d ago" if nw.get("latest_age_days") is not None else "—"
+        cz = f" · coverage {nw['news_vol_z']:+.1f}σ" if nw.get("news_vol_z") is not None else ""
+        top = nw.get("top_headline")
+        head = f" · latest: \"{top[:80]}\"" if top else ""
+        out.append(f"**News**: {nw.get('news_count')} headlines · newest {age}{cz}{head}")
     out.append("")
 
     # Re-anchored levels (distances measured from the LIVE price)

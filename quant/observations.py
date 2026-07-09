@@ -97,6 +97,11 @@ SCHEMA: dict[str, pl.DataType] = {
     # daily. st_total is the chatter-volume proxy; sent_vol_z its spike vs this store's st_total history.
     "st_bull": _I, "st_bear": _I, "st_total": _I, "reddit_posts": _I,
     "st_net": _F, "sent_vol_z": _F, "sentiment_label": _S,
+    # per-ticker news flow (report-only; see quant/news.py; null when disabled or no headlines).
+    # Un-backfillable: yfinance serves only the current window. news_count is the coverage proxy;
+    # news_vol_z its spike vs this store's news_count history. (Global news + prediction-market odds
+    # are list-shaped/market-wide → archived as their own parquet, not fixed columns.)
+    "news_count": _I, "news_latest_age_days": _F, "news_vol_z": _F, "news_latest_pub": _S,
 }
 
 
@@ -204,6 +209,7 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
         f = ctx.fundamentals.get(sym)
         p = ctx.positioning.get(sym)
         sv = ctx.sentiment.get(sym)
+        nv = ctx.news.get(sym)
         rv = ctx.roleviews.get(sym)
         rec = rec_by_sym.get(sym)
         h = ctx.holdings.get(sym)
@@ -292,6 +298,11 @@ def build_rows(ctx: AnalysisContext, *, cadence: str, prior_states: dict[str, st
             "st_total": sv.st_total if sv else None, "reddit_posts": sv.reddit_posts if sv else None,
             "st_net": sv.st_net if sv else None, "sent_vol_z": sv.sent_vol_z if sv else None,
             "sentiment_label": sv.sentiment_label if sv else None,
+            # per-ticker news flow (report-only; null when the lens is off or no headlines)
+            "news_count": nv.news_count if nv else None,
+            "news_latest_age_days": nv.latest_age_days if nv else None,
+            "news_vol_z": nv.news_vol_z if nv else None,
+            "news_latest_pub": nv.latest_pub if nv else None,
         })
 
         prev = prior_states.get(sym)
@@ -395,6 +406,28 @@ def sentiment_volume_history(store_dir: str, cadence: str = "daily") -> dict[str
     ).filter(pl.col("cadence") == cadence).sort("bar_date")
     return {
         sym: [int(v) for v in df.filter(pl.col("symbol") == sym)["st_total"].to_list() if v is not None]
+        for sym in df["symbol"].unique().to_list()
+    }
+
+
+def news_volume_history(store_dir: str, cadence: str = "daily") -> dict[str, list[int]]:
+    """Per-symbol news headline-count (news_count) series across accumulated files of one `cadence`,
+    in chronological (bar_date) order — feeds the coverage z-score in quant/news.py. Same shape as
+    sentiment_volume_history; files predating the news_count column just don't contribute."""
+    frames = []
+    for p in sorted(glob.glob(os.path.join(store_dir, "*.parquet"))):
+        try:
+            df = pl.read_parquet(p, columns=["symbol", "news_count", "bar_date", "cadence"])
+        except Exception:  # noqa: BLE001 — pre-news or incompatible file
+            continue
+        frames.append(df)
+    if not frames:
+        return {}
+    df = pl.concat(frames, how="vertical_relaxed").with_columns(
+        pl.col("cadence").fill_null("daily")
+    ).filter(pl.col("cadence") == cadence).sort("bar_date")
+    return {
+        sym: [int(v) for v in df.filter(pl.col("symbol") == sym)["news_count"].to_list() if v is not None]
         for sym in df["symbol"].unique().to_list()
     }
 

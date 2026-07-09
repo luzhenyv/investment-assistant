@@ -6,8 +6,8 @@ from dataclasses import asdict
 
 from quant import levels as levels_mod
 from quant.models import (
-    Fundamentals, MacroState, MarketState, OptionAnalysis, OptionPositioning, Recommendation,
-    RoleView, SectorState, SentimentView, Zone,
+    Fundamentals, GlobalNewsState, MacroState, MarketState, NewsView, OptionAnalysis,
+    OptionPositioning, PredictionMarketState, Recommendation, RoleView, SectorState, SentimentView, Zone,
 )
 
 
@@ -20,6 +20,69 @@ def _macro_block(macro: MacroState) -> list[str]:
     out.append("")
     out.append("_Report-only FRED context (does not feed scoring/decision). The macro-review skill "
                "adds the calendar (FOMC/CPI/PCE/NFP) and what would change the read._")
+    out.append("")
+    return out
+
+
+def _short_q(q: str | None, n: int = 46) -> str:
+    q = (q or "").strip().rstrip("?")
+    return q if len(q) <= n else q[:n].rstrip() + "…"
+
+
+def _prediction_markets_block(pm: PredictionMarketState) -> list[str]:
+    """Polymarket crowd-implied odds — a forward-looking macro prior parallel to the FRED backdrop.
+    Report-only; never feeds the engine."""
+    out = [f"## Prediction markets: **{pm.backdrop}**", ""]
+    rows = []
+    for m in pm.markets:
+        wc = m.get("week_change") or 0
+        rows.append([_short_q(m.get("question")), f"{m['prob'] * 100:.0f}%", f"{wc * 100:+.0f}pp",
+                     f"${m['volume']:,.0f}", m.get("end_date") or "—", m.get("topic")])
+    out += _table(["Market", "Prob", "1wk", "Volume", "Resolves", "Topic"], rows,
+                  ["l", "r", "r", "r", "l", "l"])
+    out.append("_Report-only Polymarket odds (keyless; higher volume = deeper). Does not feed "
+               "scoring/decision. The news-review skill reads them as the forward macro prior._")
+    out.append("")
+    return out
+
+
+def _global_news_block(gn: GlobalNewsState) -> list[str]:
+    """Deduped macro/world headlines — report-only context for the news-review / macro-review skills."""
+    out = ["## Global macro news", ""]
+    if not gn.headlines:
+        out.append("_No macro headlines fetched._")
+        out.append("")
+        return out
+    for h in gn.headlines:
+        pub = h.get("publisher") or "?"
+        d = (h.get("pub_date") or "")[:10]
+        out.append(f"- {h.get('title')} — _{pub}{(' · ' + d) if d else ''}_")
+    out.append("")
+    out.append("_Report-only macro/world headlines (yfinance Search, deduped). The news-review skill "
+               "extracts the catalyst; does not feed scoring/decision._")
+    out.append("")
+    return out
+
+
+def _news_tables(news: dict[str, NewsView]) -> list[str]:
+    """One row per symbol: headline count, latest-headline age, the coverage z-score, and the top
+    headline; coverage-spike / stale notes below."""
+    rows, notes = [], []
+    for sym in sorted(news):
+        n = news[sym]
+        age = f"{n.latest_age_days:.0f}d" if n.latest_age_days is not None else "—"
+        z = f"{n.news_vol_z:+.1f}σ" if n.news_vol_z is not None else "—"
+        top = n.headlines[0]["title"] if n.headlines else "—"
+        if len(top) > 72:
+            top = top[:72] + "…"
+        rows.append([sym, n.news_count, age, z, top])
+        if n.notes:
+            notes.append(f"- **{sym}** — " + " · ".join(n.notes))
+    out = _table(["Symbol", "#", "Latest", "Cov z", "Top headline"], rows, ["l", "r", "r", "r", "l"])
+    if notes:
+        out += notes + [""]
+    out.append("_Report-only news coverage (free yfinance headlines; no vendor sentiment). # = headline "
+               "count; Cov z = count vs this store's history. The news-review skill judges the catalyst._")
     out.append("")
     return out
 
@@ -329,6 +392,9 @@ def render_markdown(
     levels: dict[str, list[Zone]] | None = None,
     levels_source: dict[str, str] | None = None,
     sentiment: dict[str, SentimentView] | None = None,
+    news: dict[str, NewsView] | None = None,
+    global_news: GlobalNewsState | None = None,
+    prediction_markets: PredictionMarketState | None = None,
 ) -> str:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
@@ -336,6 +402,7 @@ def render_markdown(
     levels = levels or {}
     levels_source = levels_source or {}
     sentiment = sentiment or {}
+    news = news or {}
     out: list[str] = [f"# Weekly Investment Review — {generated_at}", ""]
 
     out.append(f"## Market: **{market.regime}**  (bull score {market.bull_score:.0f}/100)")
@@ -345,6 +412,12 @@ def render_markdown(
 
     if macro is not None:
         out += _macro_block(macro)
+
+    if prediction_markets is not None:
+        out += _prediction_markets_block(prediction_markets)
+
+    if global_news is not None:
+        out += _global_news_block(global_news)
 
     if sector is not None:
         out += _sector_block(sector)
@@ -409,6 +482,11 @@ def render_markdown(
         out.append("")
         out += _sentiment_tables(sentiment)
 
+    if news:
+        out.append("## News flow (per-ticker)")
+        out.append("")
+        out += _news_tables(news)
+
     out.append("## Watchlist candidates")
     out.append("")
     if watchlist_recs:
@@ -455,6 +533,9 @@ def generate(
     levels: dict[str, list[Zone]] | None = None,
     levels_source: dict[str, str] | None = None,
     sentiment: dict[str, SentimentView] | None = None,
+    news: dict[str, NewsView] | None = None,
+    global_news: GlobalNewsState | None = None,
+    prediction_markets: PredictionMarketState | None = None,
 ) -> None:
     fundamentals = fundamentals or {}
     positioning = positioning or {}
@@ -462,9 +543,11 @@ def generate(
     levels = levels or {}
     levels_source = levels_source or {}
     sentiment = sentiment or {}
+    news = news or {}
     md = render_markdown(
         generated_at, market, holding_recs, watchlist_recs, option_analyses, summary,
         fundamentals, positioning, roleviews, macro, sector, levels, levels_source, sentiment,
+        news, global_news, prediction_markets,
     )
     with open(md_path, "w") as f:
         f.write(md)
@@ -484,6 +567,9 @@ def generate(
         "levels": {sym: [asdict(z) for z in zs] for sym, zs in levels.items()},
         "levels_source": levels_source,
         "sentiment": {sym: asdict(v) for sym, v in sentiment.items()},
+        "news": {sym: asdict(v) for sym, v in news.items()},
+        "global_news": asdict(global_news) if global_news is not None else None,
+        "prediction_markets": asdict(prediction_markets) if prediction_markets is not None else None,
     }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)

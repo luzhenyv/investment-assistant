@@ -179,6 +179,40 @@ class SentimentView:
 
 
 @dataclass
+class NewsView:
+    """Per-ticker news-flow snapshot (see quant/news.py). Deterministic coverage metrics from free
+    yfinance headlines (no vendor sentiment score — the news-review skill judges the text). Report-only
+    / un-backfillable — never feeds scoring/decision/backtest."""
+    symbol: str
+    news_count: int               # headlines in the sampled window (a coverage/attention proxy)
+    latest_pub: str | None        # ISO timestamp of the most-recent headline
+    latest_age_days: float | None # age of the most-recent headline in days (freshness)
+    news_vol_z: float | None      # z-score of news_count vs the daily store's history (coverage spike)
+    headlines: list[dict] = field(default_factory=list)  # top-N {title, publisher, pub_date, link}
+    notes: list[str] = field(default_factory=list)        # stale / quiet / coverage-spike reads
+
+
+@dataclass
+class GlobalNewsState:
+    """Market-wide macro/world news backdrop (see quant/news.py). Report-only context parallel to the
+    macro block — deduped headlines from the configured yfinance Search queries; the news-review skill
+    reads them for the catalyst. Never feeds scoring/decision/backtest."""
+    count: int
+    headlines: list[dict] = field(default_factory=list)  # deduped top-N {title, publisher, pub_date, link, query}
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PredictionMarketState:
+    """Market-wide forward-looking event odds from Polymarket (see quant/prediction_markets.py). The
+    crowd-implied prior a FRED macro lens can't give. Report-only context — never feeds
+    scoring/decision/backtest; the news-review skill reads it as the forward macro prior."""
+    backdrop: str                 # one-line summary, e.g. "Fed cut by Jan 68% · US recession 2026 32%"
+    markets: list[dict] = field(default_factory=list)  # {topic, question, prob, volume, end_date, week_change}
+    notes: list[str] = field(default_factory=list)      # big weekly-probability moves worth a look
+
+
+@dataclass
 class RoleView:
     """Horizon role for one symbol + its take-profit / stop-loss discipline (see quant/roles.py).
     Report-only hint. `role` is the hand-set config role when present, else the suggested one —
@@ -212,6 +246,7 @@ class PreTradeBrief:
     levels: dict = field(default_factory=dict)    # distances from LIVE price to walls/max-pain/TP/SL + live R:R
     roles: dict = field(default_factory=dict)     # role / horizon / tp_price / sl_price
     sentiment: dict = field(default_factory=dict) # retail sentiment: label / net / bull-bear / msg volume / chatter z
+    news: dict = field(default_factory=dict)      # news flow: count / latest-headline age / coverage z / top headline
     earnings: dict | None = None            # fetch_earnings_date() + within_gate / expected_move_pct / sizing note
     market_ctx: dict = field(default_factory=dict)  # SPY/QQQ day move + VIX + idiosyncratic-vs-macro read
     portfolio: dict = field(default_factory=dict)   # book context: cash / total_value / cash_frac / cash_status / deployable

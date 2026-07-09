@@ -50,7 +50,8 @@ def main() -> None:
         md_path, json_path, generated_at, ctx.mkt, ctx.holding_recs, ctx.watchlist_recs,
         ctx.option_analyses, ctx.summary, ctx.fundamentals, ctx.positioning, ctx.roleviews,
         macro=ctx.macro_state, sector=ctx.sector_state, levels=ctx.levels,
-        levels_source=ctx.levels_source, sentiment=ctx.sentiment,
+        levels_source=ctx.levels_source, sentiment=ctx.sentiment, news=ctx.news,
+        global_news=ctx.global_news, prediction_markets=ctx.prediction_markets,
     )
     print(f"Report written to {md_path}")
     print("  " + observations.record(STORE, as_of_bar, rows, cadence="weekly"))

@@ -14,7 +14,7 @@ import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import polars as pl
 import yfinance as yf
@@ -363,6 +363,205 @@ def fetch_sentiment_raw(symbol: str, cfg: dict) -> dict | None:
     _SENTIMENT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     (_SENTIMENT_CACHE_DIR / f"{sym}.json").write_text(json.dumps(payload, indent=2))
     return {"stocktwits": stocktwits, "reddit": reddit}
+
+
+# --- News (per-ticker + global) + prediction markets ---------------------------------- #
+# Report-only context (see quant/news.py, quant/prediction_markets.py). Per-ticker + global news
+# come free from yfinance (no sentiment score — the news-review skill judges the headlines); the
+# genuinely-new signal is Polymarket's keyless crowd-implied event probabilities. All un-backfillable
+# (yfinance serves only current news; odds move), so captured daily. Never feeds scoring/decision.
+_POLYMARKET_URL = "https://gamma-api.polymarket.com/public-search?q={q}&limit_per_type=20"
+_NEWS_CACHE_DIR = cache.CACHE_DIR / "news"
+_GLOBAL_NEWS_CACHE = cache.CACHE_DIR / "global_news.json"
+_PREDICTION_MARKETS_CACHE = cache.CACHE_DIR / "prediction_markets.json"
+# yfinance Search queries for the macro/world-news block (mirrors TradingAgents get_global_news).
+_DEFAULT_GLOBAL_NEWS_QUERIES = (
+    "Federal Reserve interest rates inflation",
+    "S&P 500 earnings GDP economic outlook",
+    "geopolitical risk trade war sanctions",
+    "ECB Bank of England BOJ central bank policy",
+    "oil commodities supply chain energy",
+)
+_DEFAULT_PM_TOPICS = ("Fed rate cut 2026", "US recession 2026", "US inflation 2026", "AI 2026")
+
+
+def _parse_yf_news_item(item: dict) -> dict | None:
+    """Normalize one yfinance Ticker.get_news item (fields nested under `content`) to a flat record."""
+    c = item.get("content") or item
+    title = (c.get("title") or "").strip()
+    if not title:
+        return None
+    prov = c.get("provider") or {}
+    url = c.get("canonicalUrl") or c.get("clickThroughUrl") or {}
+    return {
+        "title": title,
+        "summary": (c.get("summary") or c.get("description") or "").replace("\n", " ").strip()[:500],
+        "publisher": prov.get("displayName") if isinstance(prov, dict) else None,
+        "link": url.get("url") if isinstance(url, dict) else (url or None),
+        "pub_date": c.get("pubDate") or "",
+    }
+
+
+def fetch_news(symbol: str, limit: int = 20) -> list[dict]:
+    """Recent per-ticker news headlines from yfinance as structured records
+    {title, summary, publisher, link, pub_date}. Free, no key. Returns [] on any failure. NB:
+    yfinance serves only the CURRENT window, so this must be captured daily (not backfillable)."""
+    try:
+        items = _yf_retry(lambda: yf.Ticker(symbol).get_news(count=limit), retry_empty=False) or []
+    except Exception:  # noqa: BLE001 — network/parse failures are expected; caller degrades to []
+        return []
+    out = []
+    for it in items[:limit]:
+        rec = _parse_yf_news_item(it)
+        if rec:
+            out.append(rec)
+    return out
+
+
+def fetch_global_news(queries=_DEFAULT_GLOBAL_NEWS_QUERIES, limit: int = 10) -> list[dict]:
+    """Macro/world headlines via yfinance Search over the configured query strings, deduped by title
+    (mirrors TradingAgents get_global_news). Records {title, publisher, link, pub_date, query}."""
+    seen, out = set(), []
+    for q in queries:
+        if len(out) >= limit:
+            break
+        try:
+            items = yf.Search(query=q, news_count=limit, enable_fuzzy_query=True).news or []
+        except Exception:  # noqa: BLE001 — network/parse failures are expected; skip this query
+            continue
+        for it in items:
+            title = (it.get("title") or "").strip()
+            if not title or title.lower() in seen:
+                continue
+            seen.add(title.lower())
+            ts = it.get("providerPublishTime")
+            pub = dt.datetime.fromtimestamp(ts, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if ts else ""
+            out.append({"title": title, "publisher": it.get("publisher"),
+                        "link": it.get("link"), "pub_date": pub, "query": q})
+            if len(out) >= limit:
+                break
+    return out
+
+
+def _parse_json_list(s) -> list:
+    """Polymarket returns `outcomes`/`outcomePrices` as JSON-encoded strings; decode to a list."""
+    if isinstance(s, list):
+        return s
+    try:
+        v = json.loads(s)
+        return v if isinstance(v, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def fetch_prediction_markets(topics=_DEFAULT_PM_TOPICS, limit: int = 6) -> list[dict]:
+    """Forward-looking Polymarket odds per topic via the keyless Gamma public-search API. Drops
+    resolved / past-dated / unparseable markets, ranks by traded volume, keeps `limit` per topic.
+    Records {topic, question, outcome, prob, volume, end_date, week_change}."""
+    today = clock.today().isoformat()
+    out = []
+    for topic in topics:
+        req = urllib.request.Request(_POLYMARKET_URL.format(q=quote(topic)),
+                                     headers={"User-Agent": _SOCIAL_UA})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read())
+        except Exception:  # noqa: BLE001 — network/parse failures are expected; skip this topic
+            continue
+        cand = []
+        for e in (data.get("events") or []):
+            for m in (e.get("markets") or []):
+                if m.get("closed"):
+                    continue
+                end = (m.get("endDate") or "")[:10]
+                if end and end < today:
+                    continue
+                prices = _parse_json_list(m.get("outcomePrices"))
+                outcomes = _parse_json_list(m.get("outcomes"))
+                if not prices or not outcomes:
+                    continue
+                try:
+                    prob = float(prices[0])
+                except (ValueError, TypeError):
+                    continue
+                cand.append({
+                    "topic": topic, "question": (m.get("question") or "").strip(),
+                    "outcome": outcomes[0], "prob": prob,
+                    "volume": float(m.get("volumeNum") or 0), "end_date": end,
+                    "week_change": float(m.get("oneWeekPriceChange") or 0),
+                })
+        cand.sort(key=lambda x: x["volume"], reverse=True)
+        out.extend(cand[:limit])
+    return out
+
+
+def _read_json_cache(path) -> dict:
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def fetch_news_raw(symbol: str, cfg: dict) -> list[dict] | None:
+    """Per-ticker news for `symbol`, gated on cfg["news"]["enabled"] (None when disabled). Daily
+    per-symbol cache at data/cache/news/<SYM>.json (the fetched==today idiom), shared by the pipeline
+    lens and the raw-snapshot step so the network is hit once/day. Serves stale on a failed fetch."""
+    nc = cfg.get("news", {})
+    if not nc.get("enabled", False):
+        return None
+    sym = symbol.upper()
+    today = clock.today().isoformat()
+    p = _NEWS_CACHE_DIR / f"{sym}.json"
+    cached = _read_json_cache(p)
+    if cached.get("fetched") == today:
+        return cached.get("items", [])
+    items = fetch_news(sym, limit=nc.get("per_ticker", {}).get("limit", 20))
+    if not items and cached.get("items"):
+        return cached.get("items", [])
+    _NEWS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"fetched": today, "captured_at": clock.timestamp(), "items": items}, indent=2))
+    return items
+
+
+def fetch_global_news_cached(cfg: dict) -> list[dict]:
+    """Global macro headlines, daily cache at data/cache/global_news.json. Gated on
+    cfg["news"]["enabled"] and cfg["news"]["global"]["enabled"]. Serves stale on failure."""
+    nc = cfg.get("news", {})
+    g = nc.get("global", {})
+    if not nc.get("enabled", False) or not g.get("enabled", True):
+        return []
+    today = clock.today().isoformat()
+    cached = _read_json_cache(_GLOBAL_NEWS_CACHE)
+    if cached.get("fetched") == today:
+        return cached.get("items", [])
+    items = fetch_global_news(tuple(g.get("queries", _DEFAULT_GLOBAL_NEWS_QUERIES)), limit=g.get("limit", 10))
+    if not items and cached.get("items"):
+        return cached.get("items", [])
+    _GLOBAL_NEWS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _GLOBAL_NEWS_CACHE.write_text(json.dumps({"fetched": today, "captured_at": clock.timestamp(),
+                                              "items": items}, indent=2))
+    return items
+
+
+def fetch_prediction_markets_cached(cfg: dict) -> list[dict]:
+    """Polymarket odds, daily cache at data/cache/prediction_markets.json. Gated on
+    cfg["prediction_markets"]["enabled"]. Serves stale on failure."""
+    pc = cfg.get("prediction_markets", {})
+    if not pc.get("enabled", False):
+        return []
+    today = clock.today().isoformat()
+    cached = _read_json_cache(_PREDICTION_MARKETS_CACHE)
+    if cached.get("fetched") == today:
+        return cached.get("markets", [])
+    markets = fetch_prediction_markets(tuple(pc.get("topics", _DEFAULT_PM_TOPICS)), limit=pc.get("limit", 6))
+    if not markets and cached.get("markets"):
+        return cached.get("markets", [])
+    _PREDICTION_MARKETS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _PREDICTION_MARKETS_CACHE.write_text(json.dumps({"fetched": today, "captured_at": clock.timestamp(),
+                                                     "markets": markets}, indent=2))
+    return markets
 
 
 # --- Options -------------------------------------------------------------------------- #
