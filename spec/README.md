@@ -64,11 +64,11 @@ raw material to fold in, not authorities.
 | Doc | Question | Raw material in repo |
 |-----|----------|----------------------|
 | `DATA_MODEL.md` ☑ **done** | *The Memory* — how does the system remember? (one representation per concept, append-only reference graph, **bitemporal** `event_at`/`known_at`, as-of; contract only) | — (contract only) |
-| `DATA_PIPELINE.md` | How do Facts arrive? (source → parse → Fact → Assessment) | `quant/pipeline.py`, `quant/providers.py` |
-| `AGENT_ARCHITECTURE.md` | What do agents do? (fact-extraction, assessment, research, strategy-selection) | `.claude/skills/*`, `quant/` lenses |
+| `DATA_PIPELINE.md` ☑ **done** | *Filling the Memory* — how does the world become Facts/Assessments? (the door where `known_at` is born; ingestion≠interpretation; contract only) | — (contract only) |
+| `AGENT_ARCHITECTURE.md` ☑ **done** | *Who May Act* — agents = **role-bound producers** (Gatherer/Assessor/Decider); a decider may not feed itself; `agent`=automated, human=`actor`; contract only | — (contract only) |
 | `BACKTEST_ENGINE.md` ☑ **done** | How is the Loop replayed? (Replay = Loop + Historical Clock; SHALL/MUST contract, **implementation-independent**) | — (contract only) |
 | `IMPLEMENTATION_STATUS.md` ☑ **done** | Where does today's Python stand vs the architecture contracts (`BACKTEST_ENGINE`, `DATA_MODEL`, …)? (ages with the code) | `quant/backtest.py`, `quant/evaluate.py`, `quant/observations.py` |
-| `REVIEW_SYSTEM.md` | Daily/weekly/monthly views + dashboard (all **views**, no new concepts) | `daily_review.py`, `weekly_review.py` |
+| `REVIEW_SYSTEM.md` ☑ **done** | *Reading the Memory* — a review = a read-only `(window, vantage)` view; **arrange, never judge**; dashboard = live review; contract only | — (contract only) |
 | `API.md` | External surface | — |
 | `DEPLOYMENT.md` | Runtime, scheduling, storage | `quant/clock.py`, cron |
 | `docs/ARCHITECTURE.md`, `docs/STRATEGY_ENGINE.md` | (existing) | reconcile → the docs above |
@@ -112,12 +112,15 @@ enforceable, so it gates `12` and everything in `architecture/`.
 **Architecture (evolving)** — begin only after `11`
 - ☑ `BACKTEST_ENGINE` — Replay = Loop + Historical Clock; SHALL/MUST contract, implementation-independent
 - ☑ `DATA_MODEL` — *The Memory*: one representation per concept, append-only reference graph, **bitemporal** (`event_at`/`known_at`), as-of reconstructable; "time protected by topology, not convention"
+- ☑ `DATA_PIPELINE` — *Filling the Memory*: the door where `known_at` is born; ingestion (world→Fact, live-only, once) ≠ interpretation (Fact→Assessment, repeatable, any clock)
+- ☑ `AGENT_ARCHITECTURE` — *Who May Act*: agents = role-bound producers (Gatherer/Assessor/Decider); decider may not feed itself; agents earn, never granted
+- ☑ `REVIEW_SYSTEM` — *Reading the Memory*: read-only `(window, vantage)` view; **arrange, never judge**; dashboard = live review
 - ☑ `IMPLEMENTATION_STATUS` — current Python vs the contracts (code refs + limitations; ages with the code)
-- ☐ `DATA_PIPELINE` · ☐ `AGENT_ARCHITECTURE` · ☐ `REVIEW_SYSTEM` · ☐ `API` · ☐ `DEPLOYMENT`
+- ☐ `API` · ☐ `DEPLOYMENT`
 - ☐ reconcile existing `docs/ARCHITECTURE.md` + `docs/STRATEGY_ENGINE.md` into the above
 
 **Project**
-- ☐ `99-ROADMAP.md`
+- ☑ `99-ROADMAP.md` → `architecture/99-ROADMAP.md` — living execution plan, *From Assistant to Earned Autonomy*; foundations (`known_at` axis = P0, record separation + decider-isolation = P1) gate everything; autonomy = P5, conditional
 
 **Invariants to check on every doc**
 - ☐ answers exactly one question
