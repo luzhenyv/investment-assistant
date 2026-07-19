@@ -27,27 +27,26 @@ this chain must never depend on one later in it.
 
 ---
 
-## Layer 1 — Specification (White Paper) · 5 docs
+## Layer 1 — Specification (White Paper) · 6 docs
 
 | Doc | Question it answers | Must **not** | Status |
 |-----|--------------------|--------------|--------|
-| `00-VISION.md` | *Why does this system exist?* — problem, goals, non-goals, long-term vision | prescribe design or tech | ☐ pending |
-| `01-PHILOSOPHY.md` | *Why is it designed this way?* — Fact vs Assessment, immutable Facts, PDCA, explainability, evolution-over-completion, human-in-the-loop; cites **SDA** | list concepts (that's `10`) | ☐ pending |
+| `00-VISION.md` | *Why does this system exist?* — problem, goals, non-goals, long-term vision | prescribe design or tech | ☑ **done** → `spec/00-VISION.md` |
+| `01-PHILOSOPHY.md` | *Why is it designed this way?* — Fact vs Assessment, immutable Facts, PDCA, explainability, evolution-over-completion, human-in-the-loop; cites **SDA** | list concepts (that's `10`) | ☑ **done** → `spec/01-PHILOSOPHY.md` |
 | `10-ONTOLOGY.md` | *What exists?* — the 7 concepts | describe flow or implementation | ☑ **done** → `spec/ontology.md` |
 | `11-DECISION_LOOP.md` | *How do the concepts flow?* — lifecycle, who-generates-whom, who-depends-on-whom, **forbidden edges** | add new concepts | ☑ **done** → `spec/11-DECISION_LOOP.md` |
-| `12-DECISION_INTELLIGENCE.md` | *How does the system know, choose, and improve?* — Knowledge Model + Strategy Framework + Evaluation Model + Learning | re-define the Loop | ☐ pending — **write next** |
+| `12-DECISION_INTELLIGENCE.md` | *How does the system know, choose, and improve?* — Knowledge + Strategy + Learning (§C Evaluation **split out** to `14`) | re-define the Loop | ☑ **done** → `spec/12-DECISION_INTELLIGENCE.md` (§C now a pointer) |
+| `14-EVALUATION_MODEL.md` | *How is "better" proven, and how is authority earned?* — dimensions, matched/per-actor Outcomes, the authority ladder | fix numeric thresholds (arch) | ☑ **done** → `spec/14-EVALUATION_MODEL.md` |
 
 **`11-DECISION_LOOP` — the forbidden edges it must state explicitly:**
 - Strategy **cannot** read Outcome or any future Fact (the look-ahead firewall).
 - Evaluation **cannot** mutate Fact (Facts are immutable).
 - The **only** feedback edge is Evaluation → {Assessment perspective-reliability, Strategy version}.
 
-**`12-DECISION_INTELLIGENCE` — the split criterion (SDA watch).** This doc deliberately merges three
-questions (knowledge shape / what a Strategy is / how to prove one better). Keep it merged **only
-while each stays a cleanly separable section answering one question.** The moment a section needs to
-reference another to be understood, or the doc stops being scannable, split it back into
-`12-KNOWLEDGE_MODEL` / `13-STRATEGY_FRAMEWORK` / `14-EVALUATION_MODEL`. Merging is the default;
-splitting is pre-authorized by this rule.
+**`12`→`14` split (done).** Evaluation's lifecycle diverged first (per-actor matched Outcomes,
+calibration, the authority ladder), so §C was split out to `14-EVALUATION_MODEL` and `12`§C reduced to
+a pointer. Knowledge and Strategy remain merged in `12` until *their* lifecycles diverge — the same
+evolution-rate trigger (not length) would later split `12-KNOWLEDGE_MODEL` / `13-STRATEGY_FRAMEWORK`.
 
 ---
 
@@ -56,12 +55,19 @@ splitting is pre-authorized by this rule.
 Each answers *"how do we implement the spec?"* — none is domain truth. Existing `docs/` files are
 raw material to fold in, not authorities.
 
+> **Architecture rule (from the `BACKTEST_ENGINE` review):** an Architecture doc is a
+> **language-independent contract** — SHALL/MUST clauses, no file/line references, no "the current
+> code already…". Anything that cites code or reports today's state goes in a companion
+> `*_STATUS` / `IMPLEMENTATION_STATUS` note that is *expected to age with the code*. The contract
+> should read the same after a rewrite to another language; the status note gets rewritten with it.
+
 | Doc | Question | Raw material in repo |
 |-----|----------|----------------------|
 | `DATA_MODEL.md` | How does the Ontology persist? (Fact store, Decision fields, indexes) | `docs/DATA_FLYWHEEL.md`, `data/daily_observations/` |
 | `DATA_PIPELINE.md` | How do Facts arrive? (source → parse → Fact → Assessment) | `quant/pipeline.py`, `quant/providers.py` |
 | `AGENT_ARCHITECTURE.md` | What do agents do? (fact-extraction, assessment, research, strategy-selection) | `.claude/skills/*`, `quant/` lenses |
-| `BACKTEST_ENGINE.md` | How is the Loop replayed? (Fact→Assessment→Decision→Outcome, **not** re-running Strategy blindly) | `backtest.py`, `quant/backtest.py` |
+| `BACKTEST_ENGINE.md` ☑ **done** | How is the Loop replayed? (Replay = Loop + Historical Clock; SHALL/MUST contract, **implementation-independent**) | — (contract only) |
+| `IMPLEMENTATION_STATUS.md` ☑ **done** | Where does today's Python stand vs the `BACKTEST_ENGINE` contract? (ages with the code) | `quant/backtest.py`, `quant/evaluate.py`, `quant/observations.py` |
 | `REVIEW_SYSTEM.md` | Daily/weekly/monthly views + dashboard (all **views**, no new concepts) | `daily_review.py`, `weekly_review.py` |
 | `API.md` | External surface | — |
 | `DEPLOYMENT.md` | Runtime, scheduling, storage | `quant/clock.py`, cron |
@@ -94,16 +100,19 @@ enforceable, so it gates `12` and everything in `architecture/`.
 ## Checklist / 备忘
 
 **Foundation**
-- ☐ `00-VISION.md` — problem · goals · non-goals · long-term vision
-- ☐ `01-PHILOSOPHY.md` — design rationale, cite SDA (immutable Facts, PDCA, human-in-the-loop, evolution-over-completion)
+- ☑ `00-VISION.md` — problem · goals · non-goals · long-term vision
+- ☑ `01-PHILOSOPHY.md` — 5 principles on an SDA/language foundation: P1 observation≠interpretation · P2 past-observable · P3 time-not-cheated · P4 authority-earned · P5 language-outlives-implementation
 
 **Domain (White Paper)**
 - ☑ `10-ONTOLOGY.md` — frozen 7 concepts (`spec/ontology.md`)
 - ☑ `11-DECISION_LOOP.md` — flow + forbidden edges (firewall, append-only, single feedback edge)
-- ☐ `12-DECISION_INTELLIGENCE.md` — knowledge + strategy + evaluation + learning (watch the split criterion)
+- ☑ `12-DECISION_INTELLIGENCE.md` — knowledge + strategy + learning (§C Evaluation split out → `14`)
+- ☑ `14-EVALUATION_MODEL.md` — dimensions + matched/per-actor Outcomes + authority ladder (rungs here, numbers in arch)
 
 **Architecture (evolving)** — begin only after `11`
-- ☐ `DATA_MODEL` · ☐ `DATA_PIPELINE` · ☐ `AGENT_ARCHITECTURE` · ☐ `BACKTEST_ENGINE` · ☐ `REVIEW_SYSTEM` · ☐ `API` · ☐ `DEPLOYMENT`
+- ☑ `BACKTEST_ENGINE` — Replay = Loop + Historical Clock; SHALL/MUST contract, implementation-independent
+- ☑ `IMPLEMENTATION_STATUS` — current Python vs the contract (code refs + limitations; ages with the code)
+- ☐ `DATA_MODEL` · ☐ `DATA_PIPELINE` · ☐ `AGENT_ARCHITECTURE` · ☐ `REVIEW_SYSTEM` · ☐ `API` · ☐ `DEPLOYMENT`
 - ☐ reconcile existing `docs/ARCHITECTURE.md` + `docs/STRATEGY_ENGINE.md` into the above
 
 **Project**

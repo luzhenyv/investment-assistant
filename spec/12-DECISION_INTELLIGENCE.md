@@ -59,22 +59,13 @@ Two constraints, inherited from `11-DECISION_LOOP`:
 
 ## C · Evaluation — how the system knows what worked
 
-Evaluation **measures**; it does not judge (`11-DECISION_LOOP`). It binds Outcomes to a Decision/Strategy and computes **Criteria** — deliberately **dimensional**, never a single `hit`:
+Evaluation **measures**; it does not judge (`11-DECISION_LOOP`). It binds Outcomes to a
+Decision/Strategy, **dimensionally** and **per-actor**, so that "did v2 beat v1?" and "is the engine
+better than me?" become one honest operation — and so improvement can be *shown*, not felt.
 
-| Dimension | Measures |
-|-----------|----------|
-| **Return** | realized ROI; realized-vs-intended |
-| **Risk** | drawdown, path volatility, risk-adjusted |
-| **Decision quality** | precision / recall of proposals; hit-rate by setup |
-| **Calibration** | did stated confidence match realized frequency? |
-| **Explainability** | can the Decision be traced back to Assessments? |
-
-**Per-actor and non-rivalrous.** Engine and human emit the *same* Decision concept, differing by `actor`, so they are measured **independently** over matched Outcomes. Two questions are one operation:
-
-- *"Did Strategy v2 beat v1?"* — measure both over matched Outcomes.
-- *"Is the engine better than me here?"* — measure both actors over matched Outcomes.
-
-The system **measures**; the **human judges** whether the numbers are good enough. It never crowns a winner — autonomy is earned by an accumulating record, not declared by a scoreboard.
+Its depth — the measurement dimensions, the two honesty rules (frozen + matched Outcomes), what an
+Outcome must capture, and the **authority ladder** that turns a measured record into earned authority —
+lives in **`14-EVALUATION_MODEL`**.
 
 ---
 
