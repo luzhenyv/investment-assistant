@@ -10,7 +10,7 @@ matter, and they would hold over a database or an event log just the same.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import polars as pl
@@ -114,6 +114,18 @@ class Memory:
             if isinstance(f, Fact) and f.metric == metric
         ]
         return sorted(out, key=lambda f: f.event_at)
+
+    def latest_fact(
+        self, subject: str, metric: str, event_at: date, as_of: datetime,
+    ) -> Fact | None:
+        """The system's *current belief* for one observation: the Fact with the greatest
+        `known_at ≤ as_of` for (subject, metric, event_at), or None if never observed. A Gatherer
+        uses this to tell a fresh observation from an unchanged re-fetch from a revision."""
+        candidates = [
+            f for f in self.as_of(as_of, "fact", subject)
+            if isinstance(f, Fact) and f.metric == metric and f.event_at == event_at
+        ]
+        return max(candidates, key=lambda f: f.known_at) if candidates else None
 
     def count(self, kind: str) -> int:
         return self._read(kind).height
