@@ -29,3 +29,5 @@ mu_overnight_backtest.py
 data/sentiment_snapshots/
 data/news_snapshots/
 data/prediction_markets/
+# core Memory store (P0 rebuild) — local, non-backfillable, like the rest of data/
+data/memory/
