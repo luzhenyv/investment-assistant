@@ -69,6 +69,29 @@ def test_revision_appends_new_fact_keeps_old(tmp_path):
     assert mem.latest_fact("AAA", "close", day, t1).value == 10.5
 
 
+def test_sub_cent_difference_is_unchanged(tmp_path):
+    mem = Memory(tmp_path)
+    day = date(2026, 3, 1)
+    gather(mem, "AAA", _fetch(_bars([(day, 10.0, 11.0, 9.5, 10.5000, 1000.0)])),
+           now=datetime(2026, 3, 2, tzinfo=UTC))
+    # A rounded/full-precision difference below a cent is the SAME observation, not a revision.
+    res = gather(mem, "AAA", _fetch(_bars([(day, 10.0, 11.0, 9.5, 10.5001, 1000.0)])),
+                 now=datetime(2026, 3, 9, tzinfo=UTC))
+    assert res.revised == 0 and res.unchanged == 5
+    assert mem.count("fact") == 5
+
+
+def test_cent_level_change_is_revision(tmp_path):
+    mem = Memory(tmp_path)
+    day = date(2026, 3, 1)
+    gather(mem, "AAA", _fetch(_bars([(day, 10.0, 11.0, 9.5, 10.50, 1000.0)])),
+           now=datetime(2026, 3, 2, tzinfo=UTC))
+    # A genuine one-cent move is a real revision — the tolerance masks noise, not real change.
+    res = gather(mem, "AAA", _fetch(_bars([(day, 10.0, 11.0, 9.5, 10.51, 1000.0)])),
+                 now=datetime(2026, 3, 9, tzinfo=UTC))
+    assert res.revised == 1 and res.unchanged == 4
+
+
 def test_composes_with_legacy_known_at(tmp_path):
     mem = Memory(tmp_path)
     day = date(2026, 3, 1)

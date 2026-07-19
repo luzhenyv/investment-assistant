@@ -30,6 +30,19 @@ Fetch = Callable[[str], "pl.DataFrame | None"]
 
 _METRICS = ("open", "high", "low", "close", "volume")
 
+# Two observations of the same thing are "the same" if they agree to the precision the data is quoted
+# at — prices to the cent, volume to the share. This stops a panel value rounded to 2dp from reading
+# as a revision of the full-precision live fetch, while a genuine cent-level move or a split still does.
+# Full precision is always *stored*; the tolerance only governs the unchanged-vs-revised decision.
+_TOL = {"open": 0.005, "high": 0.005, "low": 0.005, "close": 0.005, "volume": 0.5}
+
+
+def _same(metric: str, a: float, b: float) -> bool:
+    tol = _TOL.get(metric)
+    if tol is not None:
+        return abs(a - b) <= tol
+    return abs(a - b) <= 1e-9 * max(abs(a), abs(b), 1.0)   # unknown metric: relative fallback
+
 
 @dataclass(frozen=True, slots=True)
 class GatherResult:
@@ -65,7 +78,7 @@ def gather(memory: Memory, subject: str, fetch: Fetch, now: datetime | None = No
             prior = memory.latest_fact(subject, metric, event_at, at)
             if prior is None:
                 new += 1
-            elif prior.value == value:
+            elif _same(metric, prior.value, value):
                 unchanged += 1
                 continue                       # already known — first-known known_at preserved
             else:
