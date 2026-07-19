@@ -1,13 +1,16 @@
-# Backtest — Implementation Status v1.0
+# Architecture — Implementation Status v1.0
 
 > **Layer: Architecture (status note).** This tracks where **today's Python implementation** stands
-> against the `BACKTEST_ENGINE` contract. Unlike `BACKTEST_ENGINE`, this doc **ages with the code** —
-> the file/line references below *will* rot, and that is expected. When the code is rewritten, this doc
-> is rewritten; the contract is not. Nothing here is a specification; it is a snapshot.
+> against the architecture *contracts* (`BACKTEST_ENGINE`, `DATA_MODEL`, …). Unlike a contract, this
+> doc **ages with the code** — the file/line references below *will* rot, and that is expected. When
+> the code is rewritten, this doc is rewritten; the contracts are not. Nothing here is a
+> specification; it is a snapshot.
 
-Legend: ✅ satisfies the contract clause · ◐ partial · ☐ owed.
+Legend: ✅ satisfies the clause · ◐ partial · ☐ owed.
 
 ---
+
+# Backtest Engine
 
 ## Against the `BACKTEST_ENGINE` contract
 
@@ -19,10 +22,8 @@ Legend: ✅ satisfies the contract clause · ◐ partial · ☐ owed.
 | **Next-instant execution** | ✅ | fills at next session open (`_open_as_of :69-72`, `t_exec = t+1 :232-240`); final bar dropped (`:233-234`) |
 | **Path-aware Outcome** (terminal + MFE/MAE) | ☐ | close-to-close only, at 5/20/60 trading days (`quant/evaluate.py:49-65`) |
 | **Per-actor + calibrated Evaluation** | ☐ | engine-only, directional hit-rate (`quant/evaluate.py`); no human join, no calibration |
-| **Point-in-time data** | ☐ | see limitations below |
-| **Provenance** (supports audit/replay) | ✅ | rows stamped `git_sha`, `config_hash`, `bar_date`; `_runs/<bar_date>.json` config sidecar (`quant/observations.py`) |
-
----
+| **Point-in-time data** | ☐ | see Data Model limitations below |
+| **Provenance** | ✅ | rows stamped `git_sha`, `config_hash`, `bar_date`; `_runs/<bar_date>.json` config sidecar (`quant/observations.py`) |
 
 ## Current limitations — non-point-in-time data
 
@@ -38,10 +39,35 @@ above `shadow`** on the resulting record (per `BACKTEST_ENGINE` → `14`'s autho
 
 ---
 
+# Data Model
+
+Current storage: `data/daily_observations/<profile>/<bar_date>.parquet` — one **wide row per symbol
+per session** (~110 columns), written by `quant/observations.py` + `daily_review.py`.
+
+## Against the `DATA_MODEL` contract
+
+| Contract clause | State | Where / note |
+|-----------------|-------|--------------|
+| **Seven record types, never merged** | ☐ | one wide row **conflates** Fact (OHLC / indicators), Assessment (`state`, valuation), and the Decision label (`intent`, `reason`) — the P1 separation is not persisted |
+| **Append-only** | ◐ | files are **last-run-wins** per `bar_date` (`quant/observations.py:435-452`) — a rerun **overwrites**, it does not append a new record |
+| **Bitemporal** (event + knowledge time) | ☐ | rows carry `bar_date` (event) + `create_time` (run), but no **knowledge-time** as-of key — this is the root of the price-vintage gap above |
+| **As-of reconstructable** | ◐ | reconstructable by `bar_date`, but against *today's* revised prices, not the vintage known then |
+| **Separation preserved** | ☐ | denormalized wide row |
+| **Provenance-complete** | ✅ | `git_sha`, `config_hash`, `_runs/<bar_date>.json` config sidecar (`quant/observations.py:340-358`) |
+
+## Biggest gap
+
+The store is a **denormalized, event-time-only, overwrite-on-rerun** panel — convenient for analysis,
+but it satisfies neither the *separation*, the *append-only*, nor the *bitemporal* clauses. Migrating
+to **per-concept append-only records with a knowledge-time key** is the work owed — and it is the same
+change that closes `BACKTEST_ENGINE`'s price-vintage limitation.
+
+---
+
 ## Raw-material map
 
 | File | Role today | Work owed |
 |------|-----------|-----------|
 | `quant/backtest.py` | point-in-time, next-open replay reusing the live path | one as-of gateway + conformance test; slippage; close survivorship |
 | `quant/evaluate.py` + `evaluate.py` | engine-only forward-return scorecard | → per-actor, path-aware, calibrated (`14`) |
-| `quant/observations.py` + `daily_review.py` | append-only, provenance-stamped panel | add a **price-vintage** snapshot, not only config |
+| `quant/observations.py` + `daily_review.py` | append-only-*ish*, provenance-stamped wide panel | per-concept records; knowledge-time (bitemporal); stop overwriting on rerun |

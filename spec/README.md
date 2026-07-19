@@ -63,11 +63,11 @@ raw material to fold in, not authorities.
 
 | Doc | Question | Raw material in repo |
 |-----|----------|----------------------|
-| `DATA_MODEL.md` | How does the Ontology persist? (Fact store, Decision fields, indexes) | `docs/DATA_FLYWHEEL.md`, `data/daily_observations/` |
+| `DATA_MODEL.md` ☑ **done** | *The Memory* — how does the system remember? (one representation per concept, append-only reference graph, **bitemporal** `event_at`/`known_at`, as-of; contract only) | — (contract only) |
 | `DATA_PIPELINE.md` | How do Facts arrive? (source → parse → Fact → Assessment) | `quant/pipeline.py`, `quant/providers.py` |
 | `AGENT_ARCHITECTURE.md` | What do agents do? (fact-extraction, assessment, research, strategy-selection) | `.claude/skills/*`, `quant/` lenses |
 | `BACKTEST_ENGINE.md` ☑ **done** | How is the Loop replayed? (Replay = Loop + Historical Clock; SHALL/MUST contract, **implementation-independent**) | — (contract only) |
-| `IMPLEMENTATION_STATUS.md` ☑ **done** | Where does today's Python stand vs the `BACKTEST_ENGINE` contract? (ages with the code) | `quant/backtest.py`, `quant/evaluate.py`, `quant/observations.py` |
+| `IMPLEMENTATION_STATUS.md` ☑ **done** | Where does today's Python stand vs the architecture contracts (`BACKTEST_ENGINE`, `DATA_MODEL`, …)? (ages with the code) | `quant/backtest.py`, `quant/evaluate.py`, `quant/observations.py` |
 | `REVIEW_SYSTEM.md` | Daily/weekly/monthly views + dashboard (all **views**, no new concepts) | `daily_review.py`, `weekly_review.py` |
 | `API.md` | External surface | — |
 | `DEPLOYMENT.md` | Runtime, scheduling, storage | `quant/clock.py`, cron |
@@ -111,8 +111,9 @@ enforceable, so it gates `12` and everything in `architecture/`.
 
 **Architecture (evolving)** — begin only after `11`
 - ☑ `BACKTEST_ENGINE` — Replay = Loop + Historical Clock; SHALL/MUST contract, implementation-independent
-- ☑ `IMPLEMENTATION_STATUS` — current Python vs the contract (code refs + limitations; ages with the code)
-- ☐ `DATA_MODEL` · ☐ `DATA_PIPELINE` · ☐ `AGENT_ARCHITECTURE` · ☐ `REVIEW_SYSTEM` · ☐ `API` · ☐ `DEPLOYMENT`
+- ☑ `DATA_MODEL` — *The Memory*: one representation per concept, append-only reference graph, **bitemporal** (`event_at`/`known_at`), as-of reconstructable; "time protected by topology, not convention"
+- ☑ `IMPLEMENTATION_STATUS` — current Python vs the contracts (code refs + limitations; ages with the code)
+- ☐ `DATA_PIPELINE` · ☐ `AGENT_ARCHITECTURE` · ☐ `REVIEW_SYSTEM` · ☐ `API` · ☐ `DEPLOYMENT`
 - ☐ reconcile existing `docs/ARCHITECTURE.md` + `docs/STRATEGY_ENGINE.md` into the above
 
 **Project**
