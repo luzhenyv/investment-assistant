@@ -80,3 +80,24 @@ class Assessment(Record):
             "assessment", self.subject, self.event_at, self.perspective,
             self.result, self.confidence, self.provenance, self.known_at,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class Decision(Record):
+    """An actor's choice, resting on Assessments. `refs` point to the Assessments that justified it —
+    never to raw Facts (a decision is justified by judgment, not data). A human's answer to an engine
+    proposal is a *separate* linked Decision, not an edit of it (`11-DECISION_LOOP`)."""
+
+    actor: str = ""           # "engine" | "human"
+    status: str = ""          # "proposed" | "accepted" | "rejected" | "ignored"
+    action: str = ""          # "buy" | "trim" | "hold" | ...
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "kind", "decision")
+
+    @property
+    def id(self) -> str:
+        return _digest(
+            "decision", self.subject, self.event_at, self.actor,
+            self.status, self.action, self.provenance, self.known_at,
+        )

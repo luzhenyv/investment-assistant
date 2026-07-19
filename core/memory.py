@@ -10,45 +10,38 @@ matter, and they would hold over a database or an event log just the same.
 """
 from __future__ import annotations
 
+from dataclasses import fields
 from datetime import date, datetime
 from pathlib import Path
 
 import polars as pl
 
-from core.record import Assessment, Fact, Record
+from core.record import Assessment, Decision, Fact, Record
 
-_FACT_COLS = ["id", "subject", "event_at", "known_at", "provenance", "refs", "metric", "value"]
-_ASSESS_COLS = [
-    "id", "subject", "event_at", "known_at", "provenance", "refs",
-    "perspective", "result", "confidence",
-]
+# The one place kinds are enumerated. A new concept = one line here; serialization is generic.
+KIND_REGISTRY: dict[str, type[Record]] = {
+    "fact": Fact, "assessment": Assessment, "decision": Decision,
+}
+
+
+def _cols(kind: str) -> list[str]:
+    """Column order for a kind's file: id, then the dataclass's own fields (base + subtype)."""
+    return ["id", *(f.name for f in fields(KIND_REGISTRY[kind]))]
 
 
 def _to_row(r: Record) -> dict:
-    base = {
-        "id": r.id, "subject": r.subject, "event_at": r.event_at,
-        "known_at": r.known_at, "provenance": r.provenance, "refs": list(r.refs),
-    }
-    if isinstance(r, Fact):
-        return {**base, "metric": r.metric, "value": r.value}
-    if isinstance(r, Assessment):
-        return {**base, "perspective": r.perspective, "result": r.result, "confidence": r.confidence}
-    raise TypeError(f"unknown record type: {type(r)}")
+    row: dict = {"id": r.id}
+    for f in fields(r):
+        v = getattr(r, f.name)
+        row[f.name] = list(v) if f.name == "refs" else v
+    return row
 
 
 def _from_row(kind: str, row: dict) -> Record:
-    common = dict(
-        subject=row["subject"], event_at=row["event_at"], known_at=row["known_at"],
-        provenance=row["provenance"], refs=tuple(row["refs"]),
-    )
-    if kind == "fact":
-        return Fact(kind="fact", metric=row["metric"], value=row["value"], **common)
-    if kind == "assessment":
-        return Assessment(
-            kind="assessment", perspective=row["perspective"], result=row["result"],
-            confidence=row["confidence"], **common,
-        )
-    raise ValueError(f"unknown kind: {kind}")
+    cls = KIND_REGISTRY[kind]
+    names = {f.name for f in fields(cls)}
+    kwargs = {k: (tuple(v) if k == "refs" else v) for k, v in row.items() if k in names}
+    return cls(**kwargs)
 
 
 class Memory:
@@ -87,8 +80,7 @@ class Memory:
                 new_rows.append(_to_row(r))
             if not new_rows:
                 continue
-            cols = _FACT_COLS if kind == "fact" else _ASSESS_COLS
-            fresh = pl.DataFrame(new_rows).select(cols)
+            fresh = pl.DataFrame(new_rows).select(_cols(kind))
             combined = pl.concat([existing, fresh], how="vertical") if existing.height else fresh
             combined.write_parquet(self._path(kind))
             appended += fresh.height

@@ -55,7 +55,7 @@ def momentum_assessment(
         kind="assessment",
         subject=subject,
         event_at=facts[-1].event_at,          # judged as of the latest bar it read
-        known_at=clock.now(),                  # when this interpretation was made
+        known_at=at,                           # made at the judgment instant (= now, live; = t, replay)
         provenance=f"momentum_assessor@{version}",
         refs=tuple(f.id for f in facts),       # the Facts this judgment rests on
         perspective="momentum",

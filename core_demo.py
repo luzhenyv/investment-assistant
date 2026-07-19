@@ -21,6 +21,7 @@ from core.assess import momentum_assessment
 from core.gather import gather, yf_fetch
 from core.legacy_import import import_panel
 from core.memory import Memory
+from core.strategy import momentum_strategy
 
 PANEL_GLOB = "data/daily_observations/stocks/*.parquet"
 DEMO_ROOT = Path("data/memory/demo")
@@ -117,6 +118,25 @@ def main() -> None:
                   f"honest revisions, not silent overwrites")
     except Exception as e:  # noqa: BLE001 - demo stays green offline
         print(f"    skipped (no network / fetch failed): {type(e).__name__}: {e}")
+
+    # 6 · The thin Loop slice: Fact -> Assessment -> Decision ----------------- #
+    now = clock.now()
+    a = momentum_assessment(mem, sym, as_of=now)
+    if a is not None:
+        mem.append(a)
+    d = momentum_strategy(mem, sym, as_of=now)
+    print(f"\n[6] Thin Loop slice ({sym}) — Fact → Assessment → Decision")
+    if a is None or d is None:
+        print("    not enough history to complete the slice")
+    else:
+        n_facts = len(mem.facts(sym, "close", now))
+        print(f"    Fact        {n_facts} close observations  (raw, gathered)")
+        print(f"    Assessment  momentum = {a.result} (conf {a.confidence})  "
+              f"[{a.provenance}]  → rests on {len(a.refs)} Facts")
+        print(f"    Decision    engine proposes '{d.action}'  [{d.provenance}]  "
+              f"→ rests on the Assessment ({d.refs[0][:8]}…)")
+        print("    → explainability chain intact: the Decision traces to a judgment, "
+              "the judgment to raw Facts — no step invents its own evidence.")
 
     print("\n" + "=" * 72)
     allpass = match and untouched and firewall
