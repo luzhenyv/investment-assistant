@@ -38,6 +38,29 @@ def test_append_only_and_idempotent(tmp_path):
     assert mem.count("fact") == 1
 
 
+def test_append_accepts_older_parquet_without_payload(tmp_path):
+    known = datetime(2026, 1, 2, tzinfo=UTC)
+    old = _close_fact("AAA", date(2026, 1, 1), 100.0, known)
+    pl.DataFrame([{
+        "id": old.id,
+        "kind": old.kind,
+        "subject": old.subject,
+        "event_at": old.event_at,
+        "known_at": old.known_at,
+        "provenance": old.provenance,
+        "refs": [],
+        "metric": old.metric,
+        "value": old.value,
+    }]).write_parquet(tmp_path / "facts.parquet")
+
+    mem = Memory(tmp_path)
+    new = _close_fact("AAA", date(2026, 1, 2), 101.0, known)
+
+    assert mem.append(new) == 1
+    assert mem.count("fact") == 2
+    assert "payload" in pl.read_parquet(tmp_path / "facts.parquet").columns
+
+
 def test_as_of_firewall(tmp_path):
     mem = Memory(tmp_path)
     early = datetime(2026, 1, 2, tzinfo=UTC)

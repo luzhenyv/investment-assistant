@@ -106,3 +106,65 @@ def test_gather_and_assess_and_strategy(temp_dir):
     # So a support reversal buy suggestion should be proposed!
     assert d_pre.action == "buy"
     assert json.loads(d_pre.payload)["intent"] == "Buy (Support Reversal)"
+
+
+def test_report_prices_holdings_from_latest_available_bar(temp_dir):
+    memory = Memory(temp_dir)
+    at = datetime(2026, 7, 22, 12, 0, 0, tzinfo=timezone.utc)
+    bar_date = date(2026, 7, 21)
+    symbol = "TEST"
+
+    memory.append(Fact(
+        kind="fact",
+        subject=symbol,
+        event_at=bar_date,
+        known_at=at,
+        provenance="test@v1",
+        metric="close",
+        value=120.0,
+    ))
+    memory.append(Assessment(
+        kind="assessment",
+        subject=symbol,
+        event_at=bar_date,
+        known_at=at,
+        provenance="technical_assessor@v1",
+        perspective="technical",
+        result="neutral",
+        confidence=1.0,
+        payload=json.dumps({
+            "price": 120.0,
+            "rsi": 55.0,
+            "trend_score": 75.0,
+            "vol_state": "Normal",
+            "vol_z": 0.0,
+            "atr_move": 0.0,
+        }),
+    ))
+    memory.append(Decision(
+        kind="decision",
+        subject=symbol,
+        event_at=bar_date,
+        known_at=at,
+        provenance="sizing_strategy@v1",
+        actor="engine",
+        status="proposed",
+        action="hold",
+        payload=json.dumps({
+            "membership": "holding",
+            "intent": "Hold",
+            "reason": "test",
+            "dollar_gap": 0.0,
+            "role": "core",
+        }),
+    ))
+
+    holdings = {symbol: config.Holding(symbol, 10.0, 0.0, 100.0)}
+    _, json_path = report.generate_review_views(
+        memory, [symbol], 1000.0, holdings, [], [symbol], {}, str(temp_dir), at
+    )
+
+    payload = json.loads(Path(json_path).read_text())
+    assert payload["as_of_bar"] == "2026-07-21"
+    assert payload["portfolio"]["total_value"] == 2200.0
+    assert payload["holdings"][0]["pnl_pct"] == 0.2
