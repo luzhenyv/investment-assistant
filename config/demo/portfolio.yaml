@@ -48,3 +48,8 @@ positions:
       real fundamental break (capex/cloud-growth crack), not on a MA200 cross.
   NVDA: { core: 30,  trading: 0,  avg_cost: 155 }
   GOOG: { core: 20,  trading: 10, avg_cost: 171 }
+
+pre_positions:
+  - NBIS
+  - HOOD
+  - RKLB

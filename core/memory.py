@@ -44,6 +44,17 @@ def _from_row(kind: str, row: dict) -> Record:
     return cls(**kwargs)
 
 
+def _align_to_current_schema(df: pl.DataFrame, kind: str) -> pl.DataFrame:
+    """Project older parquet files onto the current record schema before appending."""
+    cols = _cols(kind)
+    for col in cols:
+        if col == "id" or col in df.columns:
+            continue
+        default = [] if col == "refs" else ""
+        df = df.with_columns(pl.lit(default).alias(col))
+    return df.select(cols)
+
+
 class Memory:
     """An append-only bitemporal store rooted at a directory."""
 
@@ -81,7 +92,11 @@ class Memory:
             if not new_rows:
                 continue
             fresh = pl.DataFrame(new_rows).select(_cols(kind))
-            combined = pl.concat([existing, fresh], how="vertical_relaxed") if existing.height else fresh
+            if existing.height:
+                existing = _align_to_current_schema(existing, kind)
+                combined = pl.concat([existing, fresh], how="vertical_relaxed")
+            else:
+                combined = fresh
             combined.write_parquet(self._path(kind))
             appended += fresh.height
         return appended

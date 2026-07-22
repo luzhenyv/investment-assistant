@@ -98,9 +98,11 @@ def generate_review_views(
             
     # Resolve the final session close date (the latest Fact event_at)
     fact_dates = [f.event_at for f in memory.as_of(as_of, "fact")]
+    as_of_event_at = clock.today()
     as_of_bar = clock.datestamp(as_of)
     if fact_dates:
-        as_of_bar = str(max(fact_dates))
+        as_of_event_at = max(fact_dates)
+        as_of_bar = str(as_of_event_at)
         
     stale = as_of_bar < clock.datestamp(as_of)
     
@@ -114,7 +116,7 @@ def generate_review_views(
     equity_value = 0.0
     prices_by_sym: dict[str, float] = {}
     for sym in all_symbols:
-        close_f = memory.latest_fact(sym, "close", clock.today(), as_of)
+        close_f = memory.latest_fact(sym, "close", as_of_event_at, as_of)
         if close_f is not None:
             prices_by_sym[sym] = close_f.value
             if sym in holdings_dict:
@@ -146,6 +148,7 @@ def generate_review_views(
             
         metrics = json.loads(t_asm.payload)
         d_payload = json.loads(d.payload)
+        price = metrics.get("price") or prices_by_sym.get(sym)
         
         # Build technical Assessment flags (outliers)
         flags = []
@@ -165,14 +168,17 @@ def generate_review_views(
             flags.append("布林带上轨突破")
         elif metrics.get("bb_pct_b", 0.5) <= 0.0:
             flags.append("布林带下轨超卖")
-        if metrics.get("macd_cross") != "none":
-            cross_name = "金叉" if metrics["macd_cross"] == "golden" else "死叉"
+        macd_cross = metrics.get("macd_cross", "none")
+        if macd_cross != "none":
+            cross_name = "金叉" if macd_cross == "golden" else "死叉"
             flags.append(f"MACD {cross_name}")
-        if metrics.get("kdj_cross") != "none":
-            cross_name = "金叉" if metrics["kdj_cross"] == "golden" else "死叉"
+        kdj_cross = metrics.get("kdj_cross", "none")
+        if kdj_cross != "none":
+            cross_name = "金叉" if kdj_cross == "golden" else "死叉"
             flags.append(f"KDJ {cross_name}")
-        if metrics.get("macd_divergence") != "none":
-            div_name = "底背离" if metrics["macd_divergence"] == "bullish" else "顶背离"
+        macd_divergence = metrics.get("macd_divergence", "none")
+        if macd_divergence != "none":
+            div_name = "底背离" if macd_divergence == "bullish" else "顶背离"
             flags.append(f"MACD {div_name}")
         if l_asm and l_asm.result == "candidate":
             flags.append("左侧建仓机遇 (Left-side)")
@@ -201,7 +207,7 @@ def generate_review_views(
             "dollar_gap": d_payload.get("dollar_gap"),
             "rsi": metrics.get("rsi"),
             "trend_score": metrics.get("trend_score"),
-            "price": metrics.get("price"),
+            "price": price,
             "support": metrics.get("support"),
             "resistance": metrics.get("resistance"),
             "valuation": metrics.get("valuation_label"),
@@ -215,7 +221,7 @@ def generate_review_views(
             h = holdings_dict[sym]
             rec_entry["shares"] = h.shares
             rec_entry["avg_cost"] = h.avg_cost
-            if h.avg_cost > 0:
+            if price is not None and h.avg_cost > 0:
                 rec_entry["pnl_pct"] = (price - h.avg_cost) / h.avg_cost
             holdings_recs.append(rec_entry)
         elif membership == "pre_position":
