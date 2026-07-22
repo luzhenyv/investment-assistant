@@ -40,6 +40,7 @@ class Record:
     known_at: datetime        # when the system first knew it (aware UTC)
     provenance: str           # producer + version, e.g. "legacy_import@v1"
     refs: tuple[str, ...] = ()  # ids this record depended on (backward in known_at only)
+    payload: str = ""         # (New) extensible structured JSON or detailed text
 
     @property
     def id(self) -> str:  # noqa: A003 - domain term
@@ -59,7 +60,7 @@ class Fact(Record):
     @property
     def id(self) -> str:
         # A revision (same subject/event/metric, different value or later known_at) is a new record.
-        return _digest("fact", self.subject, self.event_at, self.metric, self.value, self.known_at)
+        return _digest("fact", self.subject, self.event_at, self.metric, self.value, self.known_at, self.payload)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +79,7 @@ class Assessment(Record):
         # Re-assessing with a better rule (new provenance) → new id + known_at, same Fact refs.
         return _digest(
             "assessment", self.subject, self.event_at, self.perspective,
-            self.result, self.confidence, self.provenance, self.known_at,
+            self.result, self.confidence, self.provenance, self.known_at, self.payload,
         )
 
 
@@ -99,5 +100,5 @@ class Decision(Record):
     def id(self) -> str:
         return _digest(
             "decision", self.subject, self.event_at, self.actor,
-            self.status, self.action, self.provenance, self.known_at,
+            self.status, self.action, self.provenance, self.known_at, self.payload,
         )

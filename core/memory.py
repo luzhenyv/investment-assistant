@@ -81,7 +81,7 @@ class Memory:
             if not new_rows:
                 continue
             fresh = pl.DataFrame(new_rows).select(_cols(kind))
-            combined = pl.concat([existing, fresh], how="vertical") if existing.height else fresh
+            combined = pl.concat([existing, fresh], how="vertical_relaxed") if existing.height else fresh
             combined.write_parquet(self._path(kind))
             appended += fresh.height
         return appended

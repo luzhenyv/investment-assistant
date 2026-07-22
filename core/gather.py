@@ -92,7 +92,7 @@ def gather(memory: Memory, subject: str, fetch: Fetch, now: datetime | None = No
     return GatherResult(subject, new, revised, unchanged)
 
 
-def yf_fetch(subject: str, period: str = "6mo") -> pl.DataFrame | None:
+def yf_fetch(subject: str, period: str = "3y") -> pl.DataFrame | None:
     """Live OHLCV from yfinance → polars [date, open, high, low, close, volume].
 
     A lean port of `quant/providers.py`'s history path (auto_adjust=True), kept here so `core/`

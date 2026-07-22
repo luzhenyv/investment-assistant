@@ -475,3 +475,39 @@ def kama(close: pl.Series, window: int = 10, fast: int = 5, slow: int = 34) -> f
         sc = 2.0 * (er * (fast_sc - slow_sc) + slow_sc)
         last = last + sc * (c[i] - last)
     return float(last)
+
+
+def kdj_cross(
+    high: pl.Series, low: pl.Series, close: pl.Series, window: int = 9, smooth: int = 3
+) -> str:
+    """Detect if KDJ crossed on the latest bar.
+
+    Returns "golden" (K crossed above D), "death" (K crossed below D), or "none".
+    """
+    if close.len() < window + smooth * 2:
+        return "none"
+
+    hh, ll = pl.col("h").rolling_max(window), pl.col("l").rolling_min(window)
+    rng = hh - ll
+    rsv = pl.when(rng != 0).then((pl.col("c") - ll) / rng * 100).otherwise(0.0)
+    k_expr, d_expr = _wilder(rsv, smooth), _wilder(_wilder(rsv, smooth), smooth)
+    df = pl.DataFrame({"h": high, "l": low, "c": close}).select(
+        k_expr.alias("k"), d_expr.alias("d")
+    ).drop_nulls()
+
+    if df.height < 2:
+        return "none"
+
+    k_series = df["k"]
+    d_series = df["d"]
+
+    k_prev = float(k_series.tail(2).head(1).item())
+    k_curr = float(k_series.tail(1).item())
+    d_prev = float(d_series.tail(2).head(1).item())
+    d_curr = float(d_series.tail(1).item())
+
+    if k_prev <= d_prev and k_curr > d_curr:
+        return "golden"
+    if k_prev >= d_prev and k_curr < d_curr:
+        return "death"
+    return "none"

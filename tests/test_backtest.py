@@ -26,6 +26,7 @@ def _rising_frame(n=260, base=100.0):
             "High": close,
             "Low": [c - 1 for c in close],
             "Close": close,
+            "Volume": [1000000.0] * n,
         }
     )
 

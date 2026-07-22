@@ -46,6 +46,7 @@ def _ctx(sym, closes, sig, daily_review, levels=None):
         "weights": {}, "cash_state": "ok", "cash_low": False, "cash_frac": 0.0,
         "deployable": 0.0, "holding_recs": [], "watchlist_recs": [], "option_analyses": [],
         "positioning": {}, "roleviews": {}, "summary": {},
+        "sentiment": {}, "news": {}, "global_news": None, "prediction_markets": None,
     }
     if "sector_state" in AnalysisContext.__dataclass_fields__:
         ctx_kwargs["sector_state"] = None
