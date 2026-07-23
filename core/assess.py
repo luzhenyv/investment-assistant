@@ -219,15 +219,28 @@ class TechnicalAssessor(Assessor):
     ) -> Assessment | None:
         at = as_of or clock.now()
         
-        # Fetch Fact historical series
-        close_facts = memory.facts(symbol, "close", as_of=at)
-        high_facts = memory.facts(symbol, "high", as_of=at)
-        low_facts = memory.facts(symbol, "low", as_of=at)
-        volume_facts = memory.facts(symbol, "volume", as_of=at)
+        def latest_metric(metric: str) -> dict:
+            latest = {}
+            for fact in memory.facts(symbol, metric, as_of=at):
+                prior = latest.get(fact.event_at)
+                if prior is None or fact.known_at > prior.known_at:
+                    latest[fact.event_at] = fact
+            return latest
+
+        # Fetch current-belief Fact history, collapsing append-only revisions per date.
+        close_by_date = latest_metric("close")
+        high_by_date = latest_metric("high")
+        low_by_date = latest_metric("low")
+        volume_by_date = latest_metric("volume")
+        dates = sorted(set(close_by_date) & set(high_by_date) & set(low_by_date) & set(volume_by_date))
         
-        if len(close_facts) < 20:
+        if len(dates) < 20:
             return None  # Not enough data for meaningful indicators
-            
+
+        close_facts = [close_by_date[d] for d in dates]
+        high_facts = [high_by_date[d] for d in dates]
+        low_facts = [low_by_date[d] for d in dates]
+        volume_facts = [volume_by_date[d] for d in dates]
         close = pl.Series([f.value for f in close_facts])
         high = pl.Series([f.value for f in high_facts])
         low = pl.Series([f.value for f in low_facts])

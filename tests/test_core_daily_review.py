@@ -272,6 +272,60 @@ def test_fundamental_assessor_respects_as_of_revised_facts(temp_dir):
     assert json.loads(late_asm.payload)["peg"] == 3.0
 
 
+def test_technical_assessor_collapses_revisions_before_building_series(temp_dir):
+    memory = Memory(temp_dir)
+    symbol = "META"
+    early = datetime(2026, 7, 22, 13, 0, 0, tzinfo=timezone.utc)
+    late = datetime(2026, 7, 23, 13, 0, 0, tzinfo=timezone.utc)
+    dates = [date(2026, 6, i) for i in range(1, 25)]
+    facts = []
+    for idx, day in enumerate(dates):
+        price = 100.0 + idx
+        facts.extend([
+            Fact(
+                kind="fact", subject=symbol, event_at=day, known_at=early,
+                provenance="test@v1", metric="high", value=price + 1.0,
+            ),
+            Fact(
+                kind="fact", subject=symbol, event_at=day, known_at=early,
+                provenance="test@v1", metric="low", value=price - 1.0,
+            ),
+            Fact(
+                kind="fact", subject=symbol, event_at=day, known_at=early,
+                provenance="test@v1", metric="close", value=price,
+            ),
+            Fact(
+                kind="fact", subject=symbol, event_at=day, known_at=early,
+                provenance="test@v1", metric="volume", value=1_000_000.0,
+            ),
+        ])
+    memory.append(facts)
+    old_close = memory.latest_fact(symbol, "close", dates[-1], early)
+    revised_close = Fact(
+        kind="fact", subject=symbol, event_at=dates[-1], known_at=late,
+        provenance="test@v1", metric="close", value=130.0,
+    )
+    memory.append([
+        Fact(
+            kind="fact", subject=symbol, event_at=dates[-1], known_at=late,
+            provenance="test@v1", metric="low", value=120.0,
+        ),
+        revised_close,
+        Fact(
+            kind="fact", subject=symbol, event_at=dates[-1], known_at=late,
+            provenance="test@v1", metric="volume", value=2_000_000.0,
+        ),
+    ])
+
+    asm = assess.TechnicalAssessor().run(memory, symbol, late)
+
+    assert asm is not None
+    payload = json.loads(asm.payload)
+    assert payload["price"] == 130.0
+    assert revised_close.id in asm.refs
+    assert old_close.id not in asm.refs
+
+
 def test_fetch_fundamentals_serves_fresh_cache_without_live_fetch(temp_dir, monkeypatch):
     cache_path = temp_dir / "fundamentals.json"
     cache_path.write_text(json.dumps({
