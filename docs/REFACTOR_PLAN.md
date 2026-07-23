@@ -9,6 +9,36 @@
 >
 > Time convention: every wall-clock timestamp is UTC; exchange sessions remain market calendar dates
 
+## 0. Execution Addendum (current stage)
+
+This document is the **constitution / standard**. The execution-layer plan for the current stage lives
+in [REFACTOR_EXECUTION.md](REFACTOR_EXECUTION.md), which supplements — does not replace — this document.
+**Where the two conflict, REFACTOR_EXECUTION.md governs for the current stage**, because it records
+decisions taken after this constitution was written.
+
+**Current-stage scope** is three problems only:
+
+1. **Data archival** — collapse the scattered non-backfillable stores into one session capsule
+   (`data/sessions/<profile>/<date>/…`), addressed by `(profile, session_date, symbol)`, with the
+   report co-located as a pure view. Concretizes §2.2, §5.1, §10.1.
+2. **Engine refactor** — split capture from rendering; collapse the repeated pipeline loops behind a
+   lens registry; make the OHLCV engine composable through a single narrow influence verb (`gate`,
+   applied as a post-filter), the engine staying pure by default. Refines §8, §11.2.
+3. **Lens lifecycle** — `off → report → shadow → live` (mapping to §8.1 Context / §8.2 Shadow / §8.3
+   Engine-eligible), driven by per-lens config. Refines §8, §2.7.
+
+**Resolved** (from the recorded discussion): the engine may absorb graduated lenses via the gate waist
+(refines §2.7 / §13.5); the only implemented influence verb is `gate`, with `size` and `rank` reserved;
+the weekly review becomes a pure view over daily captures (refines §10.3); multi-timeframe is a captured
+feature axis at 1d/1w (a new refinement, distinct from §2.5). The remaining §13 questions (workflow
+cutoffs, mandatory evidence, horizons, risk budgets, agent veto, option boundary, thesis evidence) stay
+**open**.
+
+**Deferred to a later stage** (the engine/agent/human interaction and domain model): §3
+(Thesis/View/Plan/Sleeve/Overlay/Episode), §4 (authority split), §3.6 (Decision Episode), the full
+five-record event model in §5, and §14 Phases 4–7. The **data** archive layout is fixed now; the
+**code** package layout (§14 Phase 8, §17) stays deferred.
+
 ## 1. Purpose
 
 The project started as a weekly rule engine and grew into a broader personal investment system. It

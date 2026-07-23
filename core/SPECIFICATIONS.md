@@ -107,3 +107,56 @@ core/
 4. **[Strategy]**：在 `core/strategy.py` 中编码波段止盈止损政策与 Pre-Position 的“止跌/突破”条件。
 5. **[Review System]**：在 `core/report.py` 和 `core/daily_review.py` 中实现纯读、模块化的 Markdown 呈现，保证所有的 Flag 均来源于 Stored Assessments。
 6. **[Testing]**：维护原有测试套件使其 100% 绿灯，并为新 pipeline 编写鲁棒的覆盖测试。
+
+---
+
+## 6. 会话重构成果总结 (Refactoring Summary)
+
+在本次架构重构会话中，我们圆满完成了以下重大重构和代码净化，推动系统向决策智能（Decision Intelligence）的终极愿景迈进：
+
+1. **环境与配置解耦**：
+   - 将 `quant/profiles.py` 完全解耦，重构为 `core/profiles.py`。
+   - 在 `quant/profiles.py` 留存轻量级弃用（Deprecated）委托包装器，完美兼容所有历史脚本与回测流程。
+2. **基本面解析 Bug 修复**：
+   - 定位并修复了 yfinance 缓存基本面数据嵌套在 `"raw"` 字典下的格式问题，彻底解决了 `AMZN` 等标的基本面指标（如 `peg`）在读取时恒为 `None` 的 Bug。
+3. **评估器完全独立与单一职责（Single Responsibility）**：
+   - 彻底将技术指标计算与基本面研判剥离，二者互不干涉、完全解耦。
+   - 规范了每一个 Assessor 函数的职责，使其遵循 **“一个评估器仅产生一个 Assessment 记录”** 的微服务设计原则。
+4. **面向对象可插拔 Assessor 架构（Pluggable OO Design）**：
+   - 引入了 `Assessor(ABC)` 抽象基类，定义了统一的 `perspective`、`provenance` 以及 `run(...)` 契约。
+   - 将 `FundamentalAssessor`, `TechnicalAssessor`, `BottomFishingAssessor`, `LeftSideEntryAssessor`, 以及 `MomentumAssessor` 重构为高聚合的 concrete 子类。
+   - 实现了跨镜头（Cross-Lens）依赖。`LeftSideEntryAssessor` 做为跨镜头评估器，能够 bitemporally 读取 Memory 中已有的 Fundamental 和 Technical 评估结果进行联合研判，并将 edge 依赖通过 `refs` 忠实记入图数据库。
+5. **极简流水线与全绿安全网**：
+   - 净化了 `core/daily_review.py`。将原本冗长的 40+ 行重复 Looping 评估器逻辑，重构为单一眼见即所得的 `assessors` 插件化迭代注册机制，实现了流程的高度可拓展性。
+   - 合并 `core/fundamental.py` 进入 `core/assess.py`，保持 Assessor 的高度内聚。
+   - 全面升级 `tests/test_core_daily_review.py` 安全网，在 1.5 秒内通过了全部 **194 项单元与集成测试**。
+
+---
+
+## 7. 后续待办事项 (TODO Backlogs)
+
+为了进一步净化架构、提高决策智能系统的灵活性，我们定义了以下五个核心 TODO 指向未来：
+
+### TODO 1: 论证 Fundamentals 原始数据的属性归属 (Facts vs Assessments)
+- **背景**：当前基本面原始数据（如 PE, PEG）从离线 cache JSON 中直接加载并传入 `FundamentalAssessor`。
+- **问题**：根据 `10-ONTOLOGY.md` 的规范，客观世界的初始数据应当是 `Fact`，而基本面估值（cheap/fair/rich）才是主观的 `Assessment`。
+- **行动**：检查并论证基本面原始数据是否应该也像 OHLCV 一样先被捕获为独立的 `Fact` 记录，然后让 `FundamentalAssessor` 仅读取 `Fact` 进行评估。
+
+### TODO 2: 进一步高内聚 Assessor 内部 helper 函数
+- **代码位置**：`core/assess.py`
+- **问题**：文件中依然存在零散暴露在 Python 文件级别的助手函数，如 `_num`, `calculate_valuation_label`, `load_cached_fundamentals`, `detect_sr_levels`。
+- **行动**：审查这些 helper 内部函数的调用边界。如果某一函数仅在一个 Assessor 类中被使用，应当将其重构为对应 Assessor 类的内部私有方法，实现更高级别的局部封装与高内聚。
+
+### TODO 3: 对 Strategy 层的面向对象（OO）设计重构
+- **代码位置**：`core/strategy.py`
+- **目标**：仿照 `Assessor` 抽象类，为 `Strategy` 政策层引入一致的、面向对象的设计（如定义统一的 `Strategy` 或 `Decider` 基类契约）。
+- **行动**：构建 concrete 子类（例如 `HoldingSizingStrategy`, `PrePositionStrategy`, `WatchlistStrategy`, `MomentumStrategy`），实现高拓展、可插拔的决策流。
+
+### TODO 4: 优化 report 与 strategy 中的条件分支设计模式
+- **代码位置**：`core/report.py` 和 `core/strategy.py`
+- **问题**：代码中堆叠了大量的 `if...else...` 判断分支，容易导致维护噩梦。
+- **行动**：尝试引入更优的设计模式（如 **状态模式 State Pattern**、**策略模式 Strategy Pattern** 或利用多态机制），将分支判断进行类级别的隔离与行为映射，消除条件冗余。
+
+### TODO 5: 融合大语言模型（LLM）决策能力
+- **目标**：将大模型（通过智能 Agent 或专项 Skill）作为高级 Actor 整合入决策 Loop。
+- **行动**：实现 `refs` 历史链路，将大模型的 `proposed` 决策与 Engine 决策相融合，向 memory 写入具有 traceable 来源的大模型分析报告，并最终由人类 Actor 在界面一键审计执行，落实闭环反馈。

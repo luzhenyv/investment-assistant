@@ -83,18 +83,21 @@ def generate_review_views(
             
     # Map assessments by subject and perspective
     tech_asm_by_sym: dict[str, Assessment] = {}
-    left_asm_by_sym: dict[str, Assessment] = {}
     bottom_asm_by_sym: dict[str, Assessment] = {}
+    fund_asm_by_sym: dict[str, Assessment] = {}
+    left_asm_by_sym: dict[str, Assessment] = {}
     
     for a in sorted(assessments_list, key=lambda a: a.known_at):
         if not isinstance(a, Assessment):
             continue
         if a.provenance.startswith("technical_assessor"):
             tech_asm_by_sym[a.subject] = a
-        elif a.provenance.startswith("left_side_entry_assessor"):
-            left_asm_by_sym[a.subject] = a
         elif a.provenance.startswith("bottom_fishing_assessor"):
             bottom_asm_by_sym[a.subject] = a
+        elif a.provenance.startswith("fundamental_assessor"):
+            fund_asm_by_sym[a.subject] = a
+        elif a.provenance.startswith("left_side_entry_assessor"):
+            left_asm_by_sym[a.subject] = a
             
     # Resolve the final session close date (the latest Fact event_at)
     fact_dates = [f.event_at for f in memory.as_of(as_of, "fact")]
@@ -140,7 +143,6 @@ def generate_review_views(
     for sym in sorted(all_symbols):
         d = decisions_by_sym.get(sym)
         t_asm = tech_asm_by_sym.get(sym)
-        l_asm = left_asm_by_sym.get(sym)
         b_asm = bottom_asm_by_sym.get(sym)
         
         if not d or not t_asm or not t_asm.payload:
@@ -150,6 +152,18 @@ def generate_review_views(
         d_payload = json.loads(d.payload)
         price = metrics.get("price") or prices_by_sym.get(sym)
         
+        # Resolve valuation label and peg from fundamental assessment first
+        val_label = "unknown"
+        peg = None
+        f_asm = fund_asm_by_sym.get(sym)
+        if f_asm and f_asm.payload:
+            try:
+                fund_payload = json.loads(f_asm.payload)
+                val_label = fund_payload.get("valuation_label") or "unknown"
+                peg = fund_payload.get("peg")
+            except Exception:
+                pass
+
         # Build technical Assessment flags (outliers)
         flags = []
         if metrics.get("vol_state") != "Normal":
@@ -180,6 +194,8 @@ def generate_review_views(
         if macd_divergence != "none":
             div_name = "底背离" if macd_divergence == "bullish" else "顶背离"
             flags.append(f"MACD {div_name}")
+            
+        l_asm = left_asm_by_sym.get(sym)
         if l_asm and l_asm.result == "candidate":
             flags.append("左侧建仓机遇 (Left-side)")
         if b_asm and b_asm.result == "candidate":
@@ -197,7 +213,7 @@ def generate_review_views(
                 "rsi": metrics.get("rsi"),
                 "intent": d_payload.get("intent"),
             })
-            
+
         # Classify symbol record by membership category
         membership = d_payload.get("membership")
         rec_entry = {
@@ -210,7 +226,7 @@ def generate_review_views(
             "price": price,
             "support": metrics.get("support"),
             "resistance": metrics.get("resistance"),
-            "valuation": metrics.get("valuation_label"),
+            "valuation": val_label,
             "role": d_payload.get("role"),
             "pnl_pct": 0.0,
             "shares": 0.0,

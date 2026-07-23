@@ -42,11 +42,23 @@ def evaluate_daily_strategy(
         
     # Extract specific perspectives
     tech_asm = next((a for a in assessments if isinstance(a, Assessment) and a.perspective == "technical"), None)
-    left_side_asm = next((a for a in assessments if isinstance(a, Assessment) and a.perspective == "left_side_entry"), None)
     bottom_asm = next((a for a in assessments if isinstance(a, Assessment) and a.perspective == "bottom_fishing"), None)
+    fund_asm = next((a for a in assessments if isinstance(a, Assessment) and a.perspective == "fundamental"), None)
+    left_side_asm = next((a for a in assessments if isinstance(a, Assessment) and a.perspective == "left_side_entry"), None)
     
     if not tech_asm or not tech_asm.payload:
         return None
+        
+    # Reconstruct the valuation state
+    valuation_label = "unknown"
+    peg = None
+    if fund_asm and fund_asm.payload:
+        try:
+            fund_payload = json.loads(fund_asm.payload)
+            valuation_label = fund_payload.get("valuation_label") or "unknown"
+            peg = fund_payload.get("peg")
+        except Exception:
+            pass
         
     # Reconstruct the technical state from the Assessment's payload (honest and bitemporal!)
     metrics = json.loads(tech_asm.payload)
@@ -172,7 +184,7 @@ def evaluate_daily_strategy(
         elif is_left_candidate:
             action = "buy"
             intent = "Add Core (Left-Side)"
-            reason = f"左侧估值建仓信号! 估值合理偏低 ({metrics.get('valuation_label')}) 且股价贴近支撑位 ${support:.2f} 逐渐止跌。建议按 2-3-5 / 3-3-4 分批分档左侧建仓。"
+            reason = f"左侧估值建仓信号! 估值合理偏低 ({valuation_label}) 且股价贴近支撑位 ${support:.2f} 逐渐止跌。建议按 2-3-5 / 3-3-4 分批分档左侧建仓。"
             dollar_gap = step_size
         elif trend_score >= 75 and (rsi >= 60 or macd_cross == "golden" or bb_squeeze):
             action = "buy"

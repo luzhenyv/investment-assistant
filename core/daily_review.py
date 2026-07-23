@@ -14,9 +14,8 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from core import clock, config, gather, assess, strategy, report
+from core import clock, config, gather, assess, strategy, report, profiles
 from core.memory import Memory
-from quant import profiles
 
 
 def execute_daily_pipeline(
@@ -53,15 +52,23 @@ def execute_daily_pipeline(
         except Exception as e:
             print(f"  ⚠ [{sym}] Fact ingestion failed ({e}) — skipping")
             
-    # B. Run Technical, S/R, and Entry-Candidate Assessors
-    print(f"Evaluating technical and strategy-candidate Assessments ...")
-    for sym in all_symbols:
-        try:
-            assessments = assess.run_technical_assessments(memory, sym, now)
-            if assessments:
-                memory.append(assessments)
-        except Exception as e:
-            print(f"  ⚠ [{sym}] Assessment calculation failed ({e})")
+    # B. Run all bitemporal pluggable Assessors in sequence
+    assessors: list[assess.Assessor] = [
+        assess.FundamentalAssessor(),
+        assess.TechnicalAssessor(),
+        assess.BottomFishingAssessor(),
+        assess.LeftSideEntryAssessor(),
+    ]
+    
+    for assessor in assessors:
+        print(f"Evaluating {assessor.perspective} Assessments ...")
+        for sym in all_symbols:
+            try:
+                asm = assessor.run(memory, sym, now, cfg)
+                if asm:
+                    memory.append(asm)
+            except Exception as e:
+                print(f"  ⚠ [{sym}] {assessor.perspective} assessment failed ({e})")
             
     # C. Run Strategy Deciders (Holding exit/profit, Pre-Position breakout, Watchlist)
     print(f"Generating policy sizing Decisions ...")
