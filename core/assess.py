@@ -7,9 +7,8 @@ Assessment payload bitemporally.
 from __future__ import annotations
 
 import json
-import os
 from abc import ABC, abstractmethod
-from datetime import date, datetime
+from datetime import datetime
 import polars as pl
 
 from core import clock, indicators
@@ -46,21 +45,6 @@ class Assessor(ABC):
         pass
 
 
-def _num(s: object) -> float | None:
-    """Coerce a field to float. Handles native floats and strings,
-    treating "None"/"NaN"/"-"/"null" as missing -> None.
-    """
-    if s is None:
-        return None
-    text = str(s).strip()
-    if text in ("", "None", "-", "NaN", "null"):
-        return None
-    try:
-        return float(text)
-    except ValueError:
-        return None
-
-
 def calculate_valuation_label(
     pe: float | None,
     forward_pe: float | None,
@@ -87,20 +71,6 @@ def calculate_valuation_label(
         return "unknown"
 
     return f"{base} · fwd PE ≪ trailing" if ramping else base
-
-
-def load_cached_fundamentals(symbol: str) -> dict:
-    """Load cached fundamentals from data/cache/fundamentals.json for the symbol."""
-    path = "data/cache/fundamentals.json"
-    if os.path.exists(path):
-        try:
-            with open(path) as f:
-                data = json.load(f) or {}
-            # Cache is a map symbol -> dictionary
-            return data.get(symbol) or {}
-        except Exception:
-            return {}
-    return {}
 
 
 def detect_sr_levels(
@@ -160,33 +130,47 @@ class FundamentalAssessor(Assessor):
         cfg: dict | None = None,
     ) -> Assessment | None:
         at = as_of or clock.now()
-        event_date = clock.today()  # fallback if no facts exist
-
-        # Get latest date from close facts if available
-        close_facts = memory.facts(symbol, "close", as_of=at)
-        if close_facts:
-            event_date = close_facts[-1].event_at
-
-        fund_data = load_cached_fundamentals(symbol)
-        if not fund_data:
+        fundamental_facts = [
+            f for f in memory.as_of(at, "fact", symbol)
+            if isinstance(f, Fact) and f.metric.startswith("fundamental.")
+        ]
+        if not fundamental_facts:
             return None
 
-        raw = fund_data.get("raw", {})
-        fetched = fund_data.get("fetched", "")
+        latest_by_metric: dict[str, Fact] = {}
+        for fact in fundamental_facts:
+            prior = latest_by_metric.get(fact.metric)
+            if prior is None or (fact.event_at, fact.known_at) > (prior.event_at, prior.known_at):
+                latest_by_metric[fact.metric] = fact
 
-        pe = _num(raw.get("pe"))
-        forward_pe = _num(raw.get("forward_pe"))
-        peg = _num(raw.get("peg"))
-        pb = _num(raw.get("pb"))
-        ev_ebitda = _num(raw.get("ev_ebitda"))
-        profit_margin = _num(raw.get("profit_margin"))
-        rev_growth = _num(raw.get("rev_growth"))
-        eps_growth = _num(raw.get("eps_growth"))
-        analyst_target = _num(raw.get("analyst_target"))
-        beta = _num(raw.get("beta"))
-        sector = raw.get("sector")
+        def metric_value(name: str) -> float | None:
+            fact = latest_by_metric.get(f"fundamental.{name}")
+            return fact.value if fact is not None else None
+
+        metadata: dict = {}
+        metadata_fact = latest_by_metric.get("fundamental.metadata")
+        payload_source = metadata_fact or next(iter(latest_by_metric.values()))
+        if payload_source and payload_source.payload:
+            try:
+                metadata = json.loads(payload_source.payload)
+            except json.JSONDecodeError:
+                metadata = {}
+
+        pe = metric_value("pe")
+        forward_pe = metric_value("forward_pe")
+        peg = metric_value("peg")
+        pb = metric_value("pb")
+        ev_ebitda = metric_value("ev_ebitda")
+        profit_margin = metric_value("profit_margin")
+        rev_growth = metric_value("rev_growth")
+        eps_growth = metric_value("eps_growth")
+        analyst_target = metric_value("analyst_target")
+        beta = metric_value("beta")
+        sector = metadata.get("sector")
 
         val_label = calculate_valuation_label(pe, forward_pe, peg, cfg or {})
+        refs = tuple(latest_by_metric[metric].id for metric in sorted(latest_by_metric))
+        event_date = max(f.event_at for f in latest_by_metric.values())
 
         payload = {
             "pe": pe,
@@ -201,7 +185,8 @@ class FundamentalAssessor(Assessor):
             "beta": beta,
             "sector": sector,
             "valuation_label": val_label,
-            "as_of": fetched,
+            "as_of": metadata.get("fetched", ""),
+            "source": metadata.get("source", ""),
         }
 
         return Assessment(
@@ -210,7 +195,7 @@ class FundamentalAssessor(Assessor):
             event_at=event_date,
             known_at=at,
             provenance=self.provenance,
-            refs=(),  # No fact references as this comes from a slow-moving offline JSON cache
+            refs=refs,
             perspective=self.perspective,
             result=val_label,
             confidence=1.0,

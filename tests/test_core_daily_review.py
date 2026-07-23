@@ -139,6 +139,181 @@ def test_gather_and_assess_and_strategy(temp_dir):
     assert json.loads(d_pre.payload)["intent"] == "Buy (Support Reversal)"
 
 
+def test_gather_fundamentals_imports_raw_metrics_as_facts(temp_dir):
+    memory = Memory(temp_dir / "memory")
+    at = datetime(2026, 7, 18, 12, 0, 0, tzinfo=timezone.utc)
+
+    def mock_fetch(symbols: list[str], cfg: dict) -> dict[str, dict | None]:
+        return {
+            "MU": {
+                "sector": "Technology",
+                "pe": "53.46",
+                "forward_pe": "10.53",
+                "peg": "0.357",
+                "pb": "17.65",
+                "profit_margin": "0.415",
+                "_fetched": "2026-07-17",
+                "_source": "yfinance",
+                "_stale": False,
+            }
+        }
+
+    results = gather.gather_fundamentals(memory, ["MU"], {"fundamentals": {"enabled": True}}, at, mock_fetch)
+    res = results["MU"]
+
+    assert res.written == 6
+    facts = memory.as_of(at, "fact", "MU")
+    by_metric = {f.metric: f for f in facts if isinstance(f, Fact)}
+    assert by_metric["fundamental.pe"].value == 53.46
+    assert by_metric["fundamental.peg"].value == 0.357
+    assert by_metric["fundamental.pe"].event_at == date(2026, 7, 17)
+    assert by_metric["fundamental.pe"].known_at == at
+    assert json.loads(by_metric["fundamental.metadata"].payload)["sector"] == "Technology"
+
+
+def test_fundamental_assessor_reads_facts_and_preserves_payload_shape(temp_dir):
+    memory = Memory(temp_dir / "memory")
+    at = datetime(2026, 7, 18, 12, 0, 0, tzinfo=timezone.utc)
+
+    def mock_fetch(symbols: list[str], cfg: dict) -> dict[str, dict | None]:
+        return {
+            "MU": {
+                "sector": "Technology",
+                "pe": 53.0,
+                "forward_pe": 10.0,
+                "peg": 0.36,
+                "analyst_target": 945.6,
+                "_fetched": "2026-07-17",
+                "_source": "yfinance",
+                "_stale": False,
+            }
+        }
+
+    gather.gather_fundamentals(memory, ["MU"], {"fundamentals": {"enabled": True}}, at, mock_fetch)
+
+    asm = assess.FundamentalAssessor().run(memory, "MU", at, {
+        "fundamentals": {"peg_cheap": 1.0, "peg_rich": 2.0}
+    })
+
+    assert asm is not None
+    assert asm.result.startswith("cheap (growth-justified)")
+    payload = json.loads(asm.payload)
+    assert payload["pe"] == 53.0
+    assert payload["forward_pe"] == 10.0
+    assert payload["peg"] == 0.36
+    assert payload["sector"] == "Technology"
+    assert payload["valuation_label"] == asm.result
+    assert payload["as_of"] == "2026-07-17"
+
+
+def test_fundamental_assessment_refs_source_facts(temp_dir):
+    memory = Memory(temp_dir / "memory")
+    at = datetime(2026, 7, 18, 12, 0, 0, tzinfo=timezone.utc)
+
+    def mock_fetch(symbols: list[str], cfg: dict) -> dict[str, dict | None]:
+        return {
+            "MU": {
+                "sector": "Technology",
+                "pe": 30.0,
+                "peg": 1.5,
+                "_fetched": "2026-07-17",
+                "_source": "yfinance",
+                "_stale": False,
+            }
+        }
+
+    gather.gather_fundamentals(memory, ["MU"], {"fundamentals": {"enabled": True}}, at, mock_fetch)
+
+    asm = assess.FundamentalAssessor().run(memory, "MU", at, {})
+
+    assert asm is not None
+    source_fact_ids = {
+        f.id for f in memory.as_of(at, "fact", "MU")
+        if isinstance(f, Fact) and f.metric.startswith("fundamental.")
+    }
+    assert set(asm.refs) == source_fact_ids
+
+
+def test_fundamental_assessor_respects_as_of_revised_facts(temp_dir):
+    memory = Memory(temp_dir)
+    early = datetime(2026, 7, 18, 12, 0, 0, tzinfo=timezone.utc)
+    late = datetime(2026, 7, 19, 12, 0, 0, tzinfo=timezone.utc)
+    event_at = date(2026, 7, 17)
+    metadata = json.dumps({"sector": "Technology", "source": "test", "fetched": "2026-07-17"})
+    memory.append([
+        Fact(
+            kind="fact", subject="MU", event_at=event_at, known_at=early,
+            provenance="test@v1", metric="fundamental.metadata", value=0.0, payload=metadata,
+        ),
+        Fact(
+            kind="fact", subject="MU", event_at=event_at, known_at=early,
+            provenance="test@v1", metric="fundamental.pe", value=30.0, payload=metadata,
+        ),
+        Fact(
+            kind="fact", subject="MU", event_at=event_at, known_at=early,
+            provenance="test@v1", metric="fundamental.peg", value=1.5, payload=metadata,
+        ),
+        Fact(
+            kind="fact", subject="MU", event_at=event_at, known_at=late,
+            provenance="test@v1", metric="fundamental.peg", value=3.0, payload=metadata,
+        ),
+    ])
+
+    early_asm = assess.FundamentalAssessor().run(
+        memory, "MU", early, {"fundamentals": {"peg_cheap": 1.0, "peg_rich": 2.0}}
+    )
+    late_asm = assess.FundamentalAssessor().run(
+        memory, "MU", late, {"fundamentals": {"peg_cheap": 1.0, "peg_rich": 2.0}}
+    )
+
+    assert early_asm is not None and early_asm.result == "fair"
+    assert late_asm is not None and late_asm.result == "rich"
+    assert json.loads(early_asm.payload)["peg"] == 1.5
+    assert json.loads(late_asm.payload)["peg"] == 3.0
+
+
+def test_fetch_fundamentals_serves_fresh_cache_without_live_fetch(temp_dir, monkeypatch):
+    cache_path = temp_dir / "fundamentals.json"
+    cache_path.write_text(json.dumps({
+        "MU": {
+            "raw": {"sector": "Technology", "pe": 20.0, "peg": 1.2},
+            "fetched": clock.today().isoformat(),
+            "source": "yfinance",
+        }
+    }))
+
+    def fail_download(symbol: str) -> dict | None:
+        raise AssertionError("fresh cache should not call yfinance")
+
+    monkeypatch.setattr(gather, "_download_fundamentals_yf", fail_download)
+
+    out = gather.fetch_fundamentals(
+        ["MU"], {"fundamentals": {"enabled": True, "source": "yfinance", "refresh_days": 7}}, cache_path
+    )
+
+    assert out["MU"]["pe"] == 20.0
+    assert out["MU"]["_stale"] is False
+
+
+def test_fetch_fundamentals_serves_stale_cache_when_live_fetch_fails(temp_dir, monkeypatch):
+    cache_path = temp_dir / "fundamentals.json"
+    cache_path.write_text(json.dumps({
+        "MU": {
+            "raw": {"sector": "Technology", "pe": 20.0, "peg": 1.2},
+            "fetched": "2026-01-01",
+            "source": "yfinance",
+        }
+    }))
+    monkeypatch.setattr(gather, "_download_fundamentals_yf", lambda symbol: None)
+
+    out = gather.fetch_fundamentals(
+        ["MU"], {"fundamentals": {"enabled": True, "source": "yfinance", "refresh_days": 7}}, cache_path
+    )
+
+    assert out["MU"]["pe"] == 20.0
+    assert out["MU"]["_stale"] is True
+
+
 def test_report_prices_holdings_from_latest_available_bar(temp_dir):
     memory = Memory(temp_dir)
     at = datetime(2026, 7, 22, 12, 0, 0, tzinfo=timezone.utc)

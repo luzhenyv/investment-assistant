@@ -137,14 +137,14 @@ core/
 
 为了进一步净化架构、提高决策智能系统的灵活性，我们定义了以下五个核心 TODO 指向未来：
 
-### TODO 1: 论证 Fundamentals 原始数据的属性归属 (Facts vs Assessments)
-- **背景**：当前基本面原始数据（如 PE, PEG）从离线 cache JSON 中直接加载并传入 `FundamentalAssessor`。
-- **问题**：根据 `10-ONTOLOGY.md` 的规范，客观世界的初始数据应当是 `Fact`，而基本面估值（cheap/fair/rich）才是主观的 `Assessment`。
-- **行动**：检查并论证基本面原始数据是否应该也像 OHLCV 一样先被捕获为独立的 `Fact` 记录，然后让 `FundamentalAssessor` 仅读取 `Fact` 进行评估。
+### TODO 1: ✅ Fundamentals 原始数据的属性归属 (Facts vs Assessments)
+- **结论**：PE、PEG、PB、利润率、增长率、分析师目标价等基本面原始指标属于客观 `Fact`；cheap/fair/rich 等估值标签属于 `Assessment`。
+- **实现**：`core/gather.py` 继承原 `quant.providers.fetch_fundamentals` 的 yfinance + refresh cache 语义，将返回的 canonical fundamentals 先导入为 `fundamental.*` Facts，并由 `FundamentalAssessor` 通过 `Memory.as_of` 读取这些 Facts 后生成基本面 Assessment。
+- **保证**：`known_at` 使用 pipeline 运行时刻（UTC），cache 的 `fetched` 日期只作为 `event_at`/payload 元数据保存；fresh cache 不重复抓取，live fetch 失败时可沿用 stale cache，Assessment 的 `refs` 指向其实际读取的 fundamental Facts。
 
 ### TODO 2: 进一步高内聚 Assessor 内部 helper 函数
 - **代码位置**：`core/assess.py`
-- **问题**：文件中依然存在零散暴露在 Python 文件级别的助手函数，如 `_num`, `calculate_valuation_label`, `load_cached_fundamentals`, `detect_sr_levels`。
+- **问题**：文件中依然存在零散暴露在 Python 文件级别的助手函数，如 `calculate_valuation_label`, `detect_sr_levels`。
 - **行动**：审查这些 helper 内部函数的调用边界。如果某一函数仅在一个 Assessor 类中被使用，应当将其重构为对应 Assessor 类的内部私有方法，实现更高级别的局部封装与高内聚。
 
 ### TODO 3: 对 Strategy 层的面向对象（OO）设计重构

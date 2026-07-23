@@ -51,6 +51,26 @@ def execute_daily_pipeline(
                 print(f"  [{sym}] Ingested {res.new} new, {res.revised} revised daily Fact(s).")
         except Exception as e:
             print(f"  ⚠ [{sym}] Fact ingestion failed ({e}) — skipping")
+
+    print(f"Fetching/caching and ingesting fundamental Facts ...")
+    fundamentals_cache_path = os.path.join(ROOT, "data", "cache", "fundamentals.json")
+    try:
+        fundamental_results = gather.gather_fundamentals(
+            memory,
+            all_symbols,
+            cfg,
+            now,
+            lambda symbols, cfg_: gather.fetch_fundamentals(symbols, cfg_, fundamentals_cache_path),
+        )
+    except Exception as e:
+        print(f"  ⚠ Fundamental Fact fetch/import failed ({e}) — skipping")
+        fundamental_results = {}
+    for sym, res in fundamental_results.items():
+        try:
+            if res.written > 0:
+                print(f"  [{sym}] Imported {res.new} new, {res.revised} revised fundamental Fact(s).")
+        except Exception as e:
+            print(f"  ⚠ [{sym}] Fundamental Fact import failed ({e}) — skipping")
             
     # B. Run all bitemporal pluggable Assessors in sequence
     assessors: list[assess.Assessor] = [
